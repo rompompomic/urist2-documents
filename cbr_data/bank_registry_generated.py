@@ -1,0 +1,1 @@
+"""\nАвтоматически сгенерированный реестр банков ЦБ РФ\nДата генерации: 2025-11-16 19:46:33\nИсточник: https://cbr.ru/banking_sector/credit/FullCoList/\n"""\n\nBANK_REGISTRY = {\n}\n
