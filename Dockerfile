@@ -22,6 +22,9 @@ COPY . .
 # Создаём необходимые директории
 RUN mkdir -p uploads outputs resultdoc templ
 
+# Создаём пустой файл базы данных с правами на запись
+RUN touch debtors.db && chmod 666 debtors.db
+
 # Переменные окружения по умолчанию
 ENV DEBUG=False
 ENV HOST=0.0.0.0
