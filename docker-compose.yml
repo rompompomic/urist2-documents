@@ -14,6 +14,7 @@ services:
       - ./uploads:/app/uploads
       - ./outputs:/app/outputs
       - ./resultdoc:/app/resultdoc
+      - ./cbr_data:/app/cbr_data
       - ./debtors.db:/app/debtors.db
     restart: unless-stopped
     healthcheck:
