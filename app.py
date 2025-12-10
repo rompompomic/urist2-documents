@@ -837,7 +837,12 @@ def force_registry_update():
     
     # Запускаем обновление в отдельном потоке, чтобы не блокировать API
     def run_update():
-        updater.force_update()
+        success = updater.force_update()
+        if success:
+            # После успешного обновления перезагружаем реестры во всех воркерах
+            # Создаём файл-триггер для reload
+            from processor import DocumentProcessor
+            DocumentProcessor.initialize_bank_registry()
     
     update_thread = threading.Thread(target=run_update, daemon=True)
     update_thread.start()
