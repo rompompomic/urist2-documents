@@ -1391,7 +1391,11 @@ JSON:
                     config = DocumentProcessor.DOCUMENT_TYPES.get("егрн_выписка", {})
                     return "егрн_выписка", config.get("prompt", "")
 
-            # БКИ/ОКБ отчёты
+            # БКИ/НБКИ/ОКБ отчёты - проверяем по специфичным словам
+            if "нбки" in text_lower or "национальное бюро кредитных историй" in text_lower:
+                config = DocumentProcessor.DOCUMENT_TYPES.get("отчет_нбки", {})
+                return "отчет_нбки", config.get("prompt", "")
+            
             if "кредитная история" in text_lower or "скоринг" in text_lower or "бки" in text_lower:
                 config = DocumentProcessor.DOCUMENT_TYPES.get("отчет_бки", {})
                 return "отчет_бки", config.get("prompt", "")
