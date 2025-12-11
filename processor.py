@@ -5483,6 +5483,17 @@ JSON (СТРОГО этот формат):
                             # Добавляем кредиты из этого батча
                             if "Кредиты" in batch_data and isinstance(batch_data["Кредиты"], list):
                                 batch_credits = batch_data["Кредиты"]
+                                
+                                # Дополняем ИНН из реестра, если GPT не извлек
+                                for credit in batch_credits:
+                                    if not credit.get("ИНН_кредитора"):
+                                        creditor_name = credit.get("Кредитор", "")
+                                        if creditor_name:
+                                            _, canonical_name = DocumentProcessor.normalize_bank_name(creditor_name)
+                                            inn = DocumentProcessor.get_bank_inn(canonical_name)
+                                            if inn:
+                                                credit["ИНН_кредитора"] = inn
+                                
                                 all_credits.extend(batch_credits)
                                 print(f"OK ({len(batch_credits)} кредитов)")
                                 
@@ -5494,7 +5505,9 @@ JSON (СТРОГО этот формат):
                                         date = credit.get("Дата_сделки", "???")
                                         initial = credit.get("Сумма_обязательства", "???")
                                         debt = credit.get("Сумма", "???")
-                                        print(f"           {idx}. {creditor} | Дата: {date} | Начальная: {initial} | Долг: {debt}")
+                                        inn = credit.get("ИНН_кредитора", "")
+                                        inn_text = f" | ИНН: {inn}" if inn else ""
+                                        print(f"           {idx}. {creditor} | Дата: {date} | Начальная: {initial} | Долг: {debt}{inn_text}")
                             else:
                                 print("OK (0 кредитов)")
                         except json.JSONDecodeError as json_err:
@@ -5651,7 +5664,19 @@ JSON (СТРОГО этот формат):
                                     date = credit.get("Дата_сделки", "???")
                                     initial = credit.get("Сумма_обязательства", "???")
                                     debt = credit.get("Сумма", "???")
-                                    print(f"        {idx}. {creditor} | Дата: {date} | Начальная: {initial} | Долг: {debt}")
+                                    inn = credit.get("ИНН_кредитора", "")
+                                    
+                                    # Если ИНН нет - пробуем получить из реестра
+                                    if not inn and creditor != "???":
+                                        _, canonical_name = DocumentProcessor.normalize_bank_name(creditor)
+                                        inn = DocumentProcessor.get_bank_inn(canonical_name)
+                                        if inn:
+                                            credit["ИНН_кредитора"] = inn
+                                            print(f"        {idx}. {creditor} | Дата: {date} | Начальная: {initial} | Долг: {debt} | ИНН: {inn} (из реестра)")
+                                        else:
+                                            print(f"        {idx}. {creditor} | Дата: {date} | Начальная: {initial} | Долг: {debt}")
+                                    else:
+                                        print(f"        {idx}. {creditor} | Дата: {date} | Начальная: {initial} | Долг: {debt} | ИНН: {inn}")
                         except json.JSONDecodeError as json_err:
                             print(f"ERROR (JSON parse failed)")
                             print(f"      [DEBUG] Ответ GPT (первые 500 символов):")
