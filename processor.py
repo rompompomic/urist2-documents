@@ -1456,6 +1456,26 @@ JSON:
         return formatted.replace(".", ",")
 
     @staticmethod
+    def format_count_with_word(count: int, singular: str, few: str, many: str) -> str:
+        """Склоняет слово в зависимости от числа.
+        
+        Args:
+            count: Число
+            singular: Форма для 1 (счет)
+            few: Форма для 2-4 (счета)
+            many: Форма для 5+ и 0 (счетов)
+            
+        Returns:
+            Строка вида "5 счетов", "1 счет", "3 счета"
+        """
+        if count % 10 == 1 and count % 100 != 11:
+            return f"{count} {singular}"
+        elif count % 10 in [2, 3, 4] and count % 100 not in [12, 13, 14]:
+            return f"{count} {few}"
+        else:
+            return f"{count} {many}"
+
+    @staticmethod
     def normalize_creditor_name(name: str) -> str:
         """Нормализует название кредитора (банка/МФО/МКК).
         
@@ -4631,6 +4651,10 @@ JSON:
             "Общая_сумма_долга": debt_formatted,
             "Средняя_зп_за_месяц": DocumentProcessor.format_decimal(average_income) if average_income else "",
             "Количество_счетов_в_банках": str(accounts_count) if accounts_count is not None else "0",
+            "Количество_счетов_текстом": DocumentProcessor.format_count_with_word(
+                accounts_count if accounts_count is not None else 0,
+                "счет", "счета", "счетов"
+            ),
 
             # Имущество
             "Недвижимое_имущество": real_estate_detailed,
