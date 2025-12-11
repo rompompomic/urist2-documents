@@ -2062,9 +2062,18 @@ JSON:
                 matches = []
                 for key, value in CANONICAL_NAMES.items():
                     # Проверяем вхождение в обе стороны
-                    if key in normalized:
-                        matches.append((len(key), key, value))
-                    elif normalized in key:
+                    # НО пропускаем слишком короткие ключи (менее 4 символов) для частичного совпадения
+                    # чтобы "АЛЬФА" не совпала с "СФО АЛЬФА ФАБРИКА ПК 1"
+                    if key in normalized and len(key) >= 4:
+                        # Дополнительная проверка: если это короткое слово, убедимся что это отдельное слово
+                        if len(key) < 6:
+                            # Проверяем что это отдельное слово (окружено пробелами или краями)
+                            words = normalized.split()
+                            if key in words:
+                                matches.append((len(key), key, value))
+                        else:
+                            matches.append((len(key), key, value))
+                    elif normalized in key and len(normalized) >= 4:
                         matches.append((len(key), key, value))
 
                 # Берем самое длинное совпадение
