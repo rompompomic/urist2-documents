@@ -6376,7 +6376,7 @@ JSON (СТРОГО этот формат):
                 aggregated.setdefault(result.document_type, []).append(result.data)
 
         # Передаем список файлов для формирования приложений (используем исходный порядок для приложений)
-        template_context = self.prepare_template_context(aggregated, pdf_list, self.client)
+        template_context = self.prepare_template_context(aggregated, pdf_list, client)
         filled_templates = self.generate_all_documents(template_context, debtor_id=debtor_id, lawyer=lawyer)
         if output_json:
             # Сохраняем template_context для последующего редактирования и регенерации
