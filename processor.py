@@ -4016,6 +4016,29 @@ JSON:
             return ""
 
     @staticmethod
+    def convert_to_accusative_full(full_name: str) -> str:
+        """Преобразует ФИО в винительный падеж (кого? - Кузьмича Николая Павловича)."""
+        if not full_name:
+            return ""
+        prompt = (
+            "Преобразуй ФИО в винительный падеж (кого?)."
+            " Верни только результат без пояснений и дополнительных знаков.\n\n"
+            f"ФИО: {full_name}\n"
+            "Пример: Иванов Иван Иванович → Иванова Ивана Ивановича"
+        )
+        try:
+            response = client.chat.completions.create(
+                model=GPT_MODEL,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+            )
+            result = response.choices[0].message.content.strip()
+            return result.splitlines()[0]
+        except Exception:
+            return ""
+
+    @staticmethod
     def detect_gender(full_name: str) -> str:
         """Определяет пол по ФИО. Возвращает 'м' или 'ж'."""
         if not full_name:
@@ -4632,6 +4655,7 @@ JSON формат:
         # НОВОЕ: Полные ФИО в разных падежах (без инициалов)
         fio_full_rp = DocumentProcessor.convert_to_genitive_full(full_name)  # Кузьмича Николая Павловича
         fio_full_dp = DocumentProcessor.convert_to_dative_full(full_name)    # Кузьмичу Николаю Павловичу
+        fio_full_vp = DocumentProcessor.convert_to_accusative_full(full_name) # Кузьмича Николая Павловича
 
         # Разбиваем ФИО на отдельные компоненты
         fio_parts = full_name.split() if full_name else []
@@ -4676,6 +4700,7 @@ JSON формат:
             # НОВОЕ: Полные ФИО без инициалов
             "ФИО_рп": fio_full_rp,  # родительный падеж (кого? - Иванова Ивана Ивановича)
             "ФИО_дп": fio_full_dp,  # дательный падеж (кому? - Иванову Ивану Ивановичу)
+            "ФИО_вп": fio_full_vp,  # винительный падеж (кого? - Иванова Ивана Ивановича)
 
             "Пол": gender,  # "м" или "ж"
             "его_её": pronoun_accusative,  # "его" или "её" (винительный)
