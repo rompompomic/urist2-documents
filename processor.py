@@ -14,6 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+from zoneinfo import ZoneInfo
 
 from openai import OpenAI
 import pypdfium2 as pdfium
@@ -2317,6 +2318,44 @@ JSON:
             lines.append(f"Адрес проживания: {address};")
         
         return "\n".join(lines)
+
+    @staticmethod
+    def get_yekaterinburg_date() -> Dict[str, str]:
+        """Получает текущую дату по Екатеринбургскому времени (Asia/Yekaterinburg, UTC+5).
+        
+        Returns:
+            Словарь с ключами:
+            - АДень: день (например, "12")
+            - АМесяц: месяц на русском с заглавной (например, "Декабря")
+            - АГод: полный год (например, "2025")
+            - ААГод: последние 2 цифры года (например, "25")
+        """
+        # Получаем текущую дату по Екатеринбургскому времени
+        yekaterinburg_tz = ZoneInfo("Asia/Yekaterinburg")
+        now = datetime.now(yekaterinburg_tz)
+        
+        # Названия месяцев в родительном падеже (кого? чего?)
+        months_genitive = {
+            1: "Января",
+            2: "Февраля",
+            3: "Марта",
+            4: "Апреля",
+            5: "Мая",
+            6: "Июня",
+            7: "Июля",
+            8: "Августа",
+            9: "Сентября",
+            10: "Октября",
+            11: "Ноября",
+            12: "Декабря"
+        }
+        
+        return {
+            "АДень": str(now.day),
+            "АМесяц": months_genitive[now.month],
+            "АГод": str(now.year),
+            "ААГод": str(now.year)[-2:]  # Последние 2 цифры
+        }
 
     @staticmethod
     def calculate_bank_accounts(data_list: List[Dict[str, Any]]) -> Optional[int]:
@@ -4910,12 +4949,21 @@ JSON формат:
         else:
             адрес_части = DocumentProcessor.parse_address(адрес_прописки)
 
+        # Получаем текущую дату по Екатеринбургскому времени
+        date_components = DocumentProcessor.get_yekaterinburg_date()
+
         context: Dict[str, str] = {
             # Основные данные
             "ФИО": full_name,
             "Фамилия": familia,
             "Имя": imya,
             "Отчество": otchestvo,
+
+            # Дата подачи заявления (по Екатеринбургскому времени)
+            "АДень": date_components["АДень"],
+            "АМесяц": date_components["АМесяц"],
+            "АГод": date_components["АГод"],
+            "ААГод": date_components["ААГод"],
 
             # С инициалами (Иванова И.И.)
             "Фамилия_инициалы": fio_initials,
