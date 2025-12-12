@@ -1303,7 +1303,80 @@ JSON:
 }
 Если реквизит не найден, ставь null. Никаких дополнительных комментариев.""",
         },
-        
+
+        "свидетельство_о_браке": {
+            "keywords": ["свидетельство о заключении брака", "свидетельство о браке", "запись акта о заключении брака", "брак", "супруг", "супруга", "загс"],
+            "prompt": """Ты обрабатываешь свидетельство о заключении брака.
+
+ФОРМАТИРОВАНИЕ: Если текст в CAPS LOCK — приведи к нормальному виду (ФИО с заглавной буквы).
+
+Найди в документе:
+- ФИО супруга (мужа)
+- ФИО супруги (жены)
+- Дата рождения супруга
+- Дата рождения супруги
+- Дата заключения брака
+- Орган ЗАГС, выдавший свидетельство
+- Номер записи акта
+- Дата выдачи свидетельства
+
+КРИТИЧЕСКИ ВАЖНО:
+- Различай ФИО супруга (мужа) и супруги (жены)
+- Обязательно извлеки даты рождения обоих супругов
+- Дата заключения брака — это дата регистрации в ЗАГС, не дата выдачи свидетельства
+
+Верни JSON:
+{
+  "Супруг_ФИО": "ФИО мужа",
+  "Супруг_Дата_рождения": "ДД.ММ.ГГГГ",
+  "Супруга_ФИО": "ФИО жены",
+  "Супруга_Дата_рождения": "ДД.ММ.ГГГГ",
+  "Дата_заключения_брака": "ДД.ММ.ГГГГ",
+  "Орган_ЗАГС": "...",
+  "Номер_записи": "...",
+  "Дата_выдачи": "ДД.ММ.ГГГГ"
+}
+
+Если реквизит не найден, ставь null. Никаких дополнительных комментариев.""",
+        },
+
+        "свидетельство_о_рождении": {
+            "keywords": ["свидетельство о рождении", "свидетельство о рождении ребенка", "родился", "родилась", "запись акта о рождении", "ребенок", "загс"],
+            "prompt": """Ты обрабатываешь свидетельство о рождении ребенка.
+
+ФОРМАТИРОВАНИЕ: Если текст в CAPS LOCK — приведи к нормальному виду (ФИО с заглавной буквы).
+
+Найди в документе:
+- ФИО ребенка (полностью: Фамилия Имя Отчество)
+- Дата рождения ребенка
+- Место рождения ребенка
+- ФИО матери
+- ФИО отца
+- Орган ЗАГС, выдавший свидетельство
+- Номер записи акта
+- Дата выдачи свидетельства
+
+КРИТИЧЕСКИ ВАЖНО:
+- ФИО ребенка — это основная информация, обязательно извлеки
+- Дата рождения ребенка — ОБЯЗАТЕЛЬНОЕ поле для определения несовершеннолетия
+- Если отчество ребенка отсутствует — укажи null
+- Различай ФИО ребенка, матери и отца
+
+Верни JSON:
+{
+  "Ребенок_ФИО": "Полное ФИО ребенка",
+  "Дата_рождения": "ДД.ММ.ГГГГ",
+  "Место_рождения": "...",
+  "Мать_ФИО": "...",
+  "Отец_ФИО": "...",
+  "Орган_ЗАГС": "...",
+  "Номер_записи": "...",
+  "Дата_выдачи": "ДД.ММ.ГГГГ"
+}
+
+Если реквизит не найден, ставь null. Никаких дополнительных комментариев.""",
+        },
+
         "общий": {
             "keywords": [],
             "prompt": """Ты анализируешь произвольный документ.
@@ -2256,30 +2329,142 @@ JSON:
         return "; ".join(descriptions)
 
     @staticmethod
-    def determine_children_status(children: Optional[List[Dict[str, Any]]]) -> str:
-        """Определяет наличие несовершеннолетних детей."""
-        if not children:
-            return "нет"
+    def determine_children_status(children: Optional[List[Dict[str, Any]]], data_map: Dict[str, List[Dict[str, Any]]] = None) -> str:
+        """Определяет наличие несовершеннолетних детей.
+        
+        Args:
+            children: список детей из паспорта
+            data_map: словарь всех документов (для проверки свидетельств о рождении)
+        """
         today = date.today()
         minors: List[str] = []
-        for child in children:
-            if not isinstance(child, dict):
-                continue
-            name = child.get("ФИО") or ""
-            dob_str = child.get("Дата_рождения")
-            if not dob_str:
-                continue
-            try:
-                dob = datetime.strptime(dob_str, "%d.%m.%Y").date()
-                age_years = (today - dob).days / 365.25
-                if age_years < 18:
-                    entry = f"{name} ({dob_str})" if name else dob_str
-                    minors.append(entry.strip())
-            except ValueError:
-                continue
+        
+        # Собираем детей из паспорта
+        if children:
+            for child in children:
+                if not isinstance(child, dict):
+                    continue
+                name = child.get("ФИО") or ""
+                dob_str = child.get("Дата_рождения")
+                if not dob_str:
+                    continue
+                try:
+                    dob = datetime.strptime(dob_str, "%d.%m.%Y").date()
+                    age_years = (today - dob).days / 365.25
+                    if age_years < 18:
+                        entry = f"{name} ({dob_str})" if name else dob_str
+                        minors.append(entry.strip())
+                except ValueError:
+                    continue
+        
+        # Дополнительно проверяем свидетельства о рождении
+        if data_map:
+            birth_certificates = data_map.get("свидетельство_о_рождении", [])
+            for cert in birth_certificates:
+                if not isinstance(cert, dict):
+                    continue
+                name = cert.get("Ребенок_ФИО") or ""
+                dob_str = cert.get("Дата_рождения")
+                if not dob_str:
+                    continue
+                try:
+                    dob = datetime.strptime(dob_str, "%d.%m.%Y").date()
+                    age_years = (today - dob).days / 365.25
+                    if age_years < 18:
+                        entry = f"{name} ({dob_str})" if name else dob_str
+                        # Проверяем, что такого ребенка еще нет в списке
+                        if entry.strip() not in minors:
+                            minors.append(entry.strip())
+                except ValueError:
+                    continue
+        
         if minors:
             return "; ".join(minors)
         return "нет"
+
+    @staticmethod
+    def get_marital_status_key(passport: Dict[str, Any], data_map: Dict[str, List[Dict[str, Any]]] = None) -> str:
+        """Формирует значение для ключа {{Женатзамужем}}.
+        
+        Args:
+            passport: данные паспорта должника
+            data_map: словарь всех документов (для проверки свидетельств о браке)
+            
+        Returns:
+            Строка: "женат, супруга ФИО ДД.ММ.ГГГГ г.р." или "замужем, супруг ФИО ДД.ММ.ГГГГ г.р." или "Нет"
+        """
+        if not passport:
+            return "Нет"
+        
+        # Определяем пол должника
+        gender = (passport.get("Пол") or "").lower()
+        is_male = "муж" in gender
+        
+        # Проверяем семейное положение в паспорте
+        marital_status = (passport.get("Семейное_положение") or "").lower()
+        
+        # Проверяем наличие свидетельства о браке
+        has_marriage = False
+        spouse_fio = ""
+        spouse_dob = ""
+        
+        if data_map:
+            marriage_certs = data_map.get("свидетельство_о_браке", [])
+            if marriage_certs:
+                has_marriage = True
+                # Берем данные из первого свидетельства
+                cert = marriage_certs[0]
+                if isinstance(cert, dict):
+                    # Определяем, кто из супругов - это должник
+                    # Сравниваем ФИО из паспорта с ФИО супруга и супруги в свидетельстве
+                    passport_fio = passport.get("ФИО", "").lower()
+                    cert_male_fio = (cert.get("Супруг_ФИО") or "").lower()
+                    cert_female_fio = (cert.get("Супруга_ФИО") or "").lower()
+                    
+                    # Если должник - мужчина и его ФИО совпадает с супругом в свидетельстве
+                    if is_male and passport_fio == cert_male_fio:
+                        spouse_fio = cert.get("Супруга_ФИО", "")
+                        spouse_dob = cert.get("Супруга_Дата_рождения", "")
+                    # Если должник - женщина и её ФИО совпадает с супругой в свидетельстве
+                    elif not is_male and passport_fio == cert_female_fio:
+                        spouse_fio = cert.get("Супруг_ФИО", "")
+                        spouse_dob = cert.get("Супруг_Дата_рождения", "")
+                    # Если не удалось сопоставить по ФИО, берем противоположный пол
+                    elif is_male:
+                        spouse_fio = cert.get("Супруга_ФИО", "")
+                        spouse_dob = cert.get("Супруга_Дата_рождения", "")
+                    else:
+                        spouse_fio = cert.get("Супруг_ФИО", "")
+                        spouse_dob = cert.get("Супруг_Дата_рождения", "")
+        
+        # Проверяем свидетельство о разводе
+        has_divorce = False
+        if data_map:
+            divorce_certs = data_map.get("свидетельство_о_разводе", [])
+            if divorce_certs:
+                has_divorce = True
+        
+        # Формируем ответ
+        is_married = has_marriage or "женат" in marital_status or "замужем" in marital_status
+        not_married = "не женат" in marital_status or "не замужем" in marital_status or (has_divorce and not has_marriage)
+        
+        if not_married or not is_married:
+            return "Нет"
+        
+        # Если в браке, формируем текст
+        if is_male:
+            status = "женат"
+            spouse_title = "супруга"
+        else:
+            status = "замужем"
+            spouse_title = "супруг"
+        
+        if spouse_fio and spouse_dob:
+            return f"{status}, {spouse_title} {spouse_fio} {spouse_dob} г.р."
+        elif spouse_fio:
+            return f"{status}, {spouse_title} {spouse_fio}"
+        else:
+            return status.capitalize()
 
     @staticmethod
     def extract_real_estate_from_notifications(notification_list: List[Dict[str, Any]], owner_fio: str = "") -> List[str]:
@@ -2890,6 +3075,13 @@ JSON:
                         except ValueError:
                             continue
 
+        # Проверяем свидетельство о браке
+        has_marriage = False
+        if data_map:
+            marriage_certs = data_map.get("свидетельство_о_браке", [])
+            if marriage_certs:
+                has_marriage = True
+
         # Проверяем свидетельство о расторжении брака
         has_divorce = False
         if data_map:
@@ -2898,7 +3090,7 @@ JSON:
                 has_divorce = True
 
         # Проверяем, не в браке ли
-        not_married = "не женат" in marital_status or "не замужем" in marital_status or has_divorce
+        not_married = "не женат" in marital_status or "не замужем" in marital_status or (has_divorce and not has_marriage)
 
         # Формируем текст о семейном положении
         parts = []
@@ -2907,8 +3099,8 @@ JSON:
         if not_married:
             parts.append("Должник в настоящее время в браке не состоит")
         else:
-            # Если в браке
-            if "женат" in marital_status or "замужем" in marital_status:
+            # Если в браке (есть свидетельство или указано в паспорте)
+            if has_marriage or "женат" in marital_status or "замужем" in marital_status:
                 parts.append("Должник состоит в браке")
             elif "разведен" in marital_status or "разведена" in marital_status:
                 parts.append("Должник разведен")
@@ -4750,9 +4942,11 @@ JSON формат:
             # Супруг (заинтересованное лицо)
             "Заинтересованное_лицо": DocumentProcessor.format_interested_party(passport_spouse, inn_spouse, snils_spouse),
 
-            # Дети
+            # Дети и брак
+            "Женатзамужем": DocumentProcessor.get_marital_status_key(passport, data_map),
             "Несовершеннолетние_дети": DocumentProcessor.determine_children_status(
-                passport.get("Дети") if passport else None
+                passport.get("Дети") if passport else None,
+                data_map
             ),
 
             # Финансы
