@@ -1405,8 +1405,14 @@ JSON:
                 config = DocumentProcessor.DOCUMENT_TYPES.get("налоговое_уведомление", {})
                 return "налоговое_уведомление", config.get("prompt", "")
 
-            # ГИБДД - заявление или справка
-            if ("гибдд" in text_lower or "гаи" in text_lower or "мрэо" in text_lower or "госавтоинспекция" in text_lower) and ("транспорт" in text_lower or "зарегистрирован" in text_lower or "заявление" in text_lower):
+            # ГИБДД - заявление или справка (расширенная проверка)
+            gibdd_keywords = ["гибдд", "гаи", "мрэо", "госавтоинспекция", "государственная инспекция безопасности дорожного движения"]
+            transport_keywords = ["транспорт", "зарегистрирован", "заявление", "автомобил", "тс", "транспортн", "регистрац", "птс", "стс", "справка"]
+            
+            has_gibdd = any(kw in text_lower for kw in gibdd_keywords)
+            has_transport = any(kw in text_lower for kw in transport_keywords)
+            
+            if has_gibdd or (has_transport and any(kw in filename_lower for kw in ["гибдд", "транспорт", "справка"])):
                 config = DocumentProcessor.DOCUMENT_TYPES.get("гибдд", {})
                 return "гибдд", config.get("prompt", "")
 
@@ -4056,6 +4062,64 @@ JSON:
             return "его" if gender == "м" else "её"
 
     @staticmethod
+    def parse_address_with_gpt(full_address: str, openai_client) -> Dict[str, str]:
+        """Парсит адрес прописки на компоненты через GPT."""
+        result = {
+            "субъект": "",
+            "район": "",
+            "город": "",
+            "населенный_пункт": "",
+            "улица": "",
+            "дом": "",
+            "корпус": "",
+            "квартира": "",
+        }
+
+        if not full_address or not openai_client:
+            return result
+
+        prompt = f"""Разбери адрес на компоненты. Верни ТОЛЬКО JSON без дополнительного текста.
+
+Адрес: {full_address}
+
+JSON формат:
+{{
+  "субъект": "область/край/республика (например: Новосибирская область, Краснодарский край)",
+  "район": "район (если есть, например: Центральный район)",
+  "город": "город (например: Новосибирск, город Москва)",
+  "населенный_пункт": "поселок/село/деревня (если есть вместо города)",
+  "улица": "улица/проспект/переулок с названием (например: ул. Ленина, проспект Мира)",
+  "дом": "номер дома (только цифры и буквы, например: 10, 5А)",
+  "корпус": "номер корпуса/строения (если есть, например: 2, 1А)",
+  "квартира": "номер квартиры (только цифры, например: 45)"
+}}
+
+Если компонента нет в адресе - оставь пустую строку "".
+"""
+
+        try:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            
+            response_text = response.choices[0].message.content.strip()
+            
+            # Очистка JSON
+            cleaned = DocumentProcessor.clean_json_response(response_text)
+            if cleaned:
+                parsed = json.loads(cleaned)
+                for key in result.keys():
+                    if key in parsed and parsed[key]:
+                        result[key] = str(parsed[key]).strip()
+        except Exception as e:
+            print(f"      [WARNING] Не удалось разобрать адрес через GPT: {e}")
+            # Fallback на regex парсинг
+            return DocumentProcessor.parse_address(full_address)
+
+        return result
+
+    @staticmethod
     def parse_address(full_address: str) -> Dict[str, str]:
         """Парсит адрес прописки на компоненты."""
         import re
@@ -4406,7 +4470,7 @@ JSON:
         return "\n".join(attachments)
 
     @staticmethod
-    def prepare_template_context(data_map: Dict[str, List[Dict[str, Any]]], pdf_paths: Optional[List[Path]] = None) -> Dict[str, str]:
+    def prepare_template_context(data_map: Dict[str, List[Dict[str, Any]]], pdf_paths: Optional[List[Path]] = None, openai_client=None) -> Dict[str, str]:
         passport = DocumentProcessor.select_first_entry(data_map, "паспорт")
         inn = DocumentProcessor.select_first_entry(data_map, "инн")
         snils = DocumentProcessor.select_first_entry(data_map, "снилс")
@@ -4589,9 +4653,13 @@ JSON:
         # Уголовная ответственность (по умолчанию нет) - используем правильное местоимение (родительный падеж)
         criminal_text = f"В отношении должника не имеется сведений об уголовных и административных делах в отношении {pronoun_genitive}, а также о наличии неснятой или непогашенной судимости."
 
-        # Парсим адрес прописки на компоненты
+        # Парсим адрес прописки на компоненты через GPT
         адрес_прописки = passport.get("Прописка", "") if passport else ""
-        адрес_части = DocumentProcessor.parse_address(адрес_прописки)
+        if openai_client and адрес_прописки:
+            print(f"      Разбор адреса через GPT...")
+            адрес_части = DocumentProcessor.parse_address_with_gpt(адрес_прописки, openai_client)
+        else:
+            адрес_части = DocumentProcessor.parse_address(адрес_прописки)
 
         context: Dict[str, str] = {
             # Основные данные
@@ -5998,7 +6066,7 @@ JSON (СТРОГО этот формат):
                 aggregated.setdefault(result.document_type, []).append(result.data)
 
         # Передаем список файлов для формирования приложений (используем исходный порядок для приложений)
-        template_context = self.prepare_template_context(aggregated, pdf_list)
+        template_context = self.prepare_template_context(aggregated, pdf_list, self.client)
         filled_templates = self.generate_all_documents(template_context, debtor_id=debtor_id, lawyer=lawyer)
         if output_json:
             # Сохраняем template_context для последующего редактирования и регенерации
