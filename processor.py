@@ -2209,21 +2209,30 @@ JSON:
 
     @staticmethod
     def extract_employers(records: Dict[str, Any]) -> str:
-        """Извлекает список работодателей из трудовой книжки."""
-        employers: List[str] = []
-        for entry in records.get("Записи", []) or []:
-            name = (entry or {}).get("Работодатель")
-            if name and name not in employers:
-                employers.append(name)
-
-        if not employers:
+        """Извлекает текущее место работы из трудовой книжки."""
+        if not records:
             return "Должник в настоящее время не работает"
-
-        # Форматируем для заявления
-        if len(employers) == 1:
-            return f"Должник работает в {employers[0]}"
-        else:
-            return f"Должник работал в следующих организациях: {'; '.join(employers)}"
+        
+        # Проверяем поле Текущая_работа из GPT
+        current_work = records.get("Текущая_работа")
+        if current_work and current_work != "Нет":
+            return f"Должник работает в {current_work}"
+        
+        # Если нет - проверяем последнюю запись
+        entries = records.get("Записи", []) or []
+        if not entries:
+            return "Должник в настоящее время не работает"
+        
+        # Последняя запись (записи отсортированы по дате)
+        last_entry = entries[-1]
+        if last_entry and last_entry.get("Событие") != "Увольнение":
+            employer = last_entry.get("Работодатель", "")
+            position = last_entry.get("Должность", "")
+            if employer:
+                workplace = f"{employer}, {position}" if position else employer
+                return f"Должник работает в {workplace}"
+        
+        return "Должник в настоящее время не работает"
 
     @staticmethod
     def extract_current_job(records: Dict[str, Any]) -> str:
