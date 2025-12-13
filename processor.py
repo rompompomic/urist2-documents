@@ -2295,6 +2295,8 @@ JSON:
         # Проверяем поле Текущая_работа из GPT
         current_work = records.get("Текущая_работа")
         if current_work and current_work != "Нет":
+            # Кавычки-ёлочки
+            current_work = current_work.replace('"', '«').replace("'", "«").replace('"', '»').replace("'", "»")
             return f"Должник работает в {current_work}"
         
         # Если нет - проверяем последнюю запись
@@ -2309,6 +2311,8 @@ JSON:
             position = last_entry.get("Должность", "")
             if employer:
                 workplace = f"{employer}, {position}" if position else employer
+                # Кавычки-ёлочки
+                workplace = workplace.replace('"', '«').replace("'", "«").replace('"', '»').replace("'", "»")
                 return f"Должник работает в {workplace}"
         
         return "Должник в настоящее время не работает"
@@ -2326,6 +2330,8 @@ JSON:
         # Проверяем поле Текущая_работа из GPT
         current_work = records.get("Текущая_работа")
         if current_work:
+            # Кавычки-ёлочки
+            current_work = current_work.replace('"', '«').replace("'", "«").replace('"', '»').replace("'", "»")
             return current_work
         
         # Если нет - проверяем последнюю запись
@@ -2339,6 +2345,9 @@ JSON:
             employer = last_entry.get("Работодатель", "")
             position = last_entry.get("Должность", "")
             if employer:
+                # Кавычки-ёлочки
+                employer = employer.replace('"', '«').replace("'", "«").replace('"', '»').replace("'", "»")
+                position = position.replace('"', '«').replace("'", "«").replace('"', '»').replace("'", "»")
                 return f"{employer}, {position}" if position else employer
         
         return "Нет"
@@ -3633,6 +3642,8 @@ JSON:
                     адрес_банка = банк_normalized.split(",")[0].strip()
                 else:
                     адрес_банка = банк_normalized
+                # Кавычки-ёлочки
+                адрес_банка = адрес_банка.replace('"', '«').replace("'", "«").replace('"', '»').replace("'", "»")
 
                 тип_счета = счет.get("Тип") or счет.get("Статус") or ""
                 номер = счет.get("Номер") or ""
