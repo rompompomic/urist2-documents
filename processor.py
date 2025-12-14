@@ -2353,8 +2353,8 @@ JSON:
         return "Нет"
 
     @staticmethod
-    def format_interested_party(passport_spouse: Dict[str, Any], inn_spouse: Dict[str, Any], snils_spouse: Dict[str, Any]) -> str:
-        """Форматирует информацию о супруге (заинтересованном лице).
+    def format_interested_party(passport_spouse: Dict[str, Any], inn_spouse: Dict[str, Any], snils_spouse: Dict[str, Any]):
+        """Форматирует информацию о супруге (заинтересованном лице) с жирными заголовками.
         
         Args:
             passport_spouse: Данные паспорта супруга
@@ -2362,7 +2362,7 @@ JSON:
             snils_spouse: Данные СНИЛС супруга
             
         Returns:
-            Отформатированный текст с данными супруга или пустая строка
+            RichText с форматированием или пустая строка
         """
         if not passport_spouse:
             return ""
@@ -2387,16 +2387,20 @@ JSON:
         # Адрес регистрации
         address = passport_spouse.get("Прописка", "")
         
-        # Формируем текст
-        lines = [f"Заинтересованное лицо:\n{fio}"]
+        # Создаем RichText с форматированием
+        rt = RichText()
+        rt.add("Заинтересованное лицо:", bold=True)
+        rt.add(f"\n{fio}")
         
         if birth_info:
-            lines.append(f"Дата и место рождения: {birth_info};")
+            rt.add("\nДата и место рождения: ", bold=True)
+            rt.add(f"{birth_info};")
         
         if address:
-            lines.append(f"Адрес проживания: {address};")
+            rt.add("\nАдрес проживания: ", bold=True)
+            rt.add(f"{address};")
         
-        return "\n".join(lines)
+        return rt
 
     @staticmethod
     def get_yekaterinburg_date() -> Dict[str, str]:
