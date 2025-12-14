@@ -16,6 +16,11 @@ services:
       - ./resultdoc:/app/resultdoc
       - ./cbr_data:/app/cbr_data
       - ./debtors.db:/app/debtors.db
+      # Монтируем код для автоматического обновления без пересборки
+      - ./processor.py:/app/processor.py
+      - ./app.py:/app/app.py
+      - ./templ:/app/templ
+      - ./templates:/app/templates
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
