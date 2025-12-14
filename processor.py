@@ -2387,18 +2387,18 @@ JSON:
         # Адрес регистрации
         address = passport_spouse.get("Прописка", "")
         
-        # Создаем RichText с форматированием Times New Roman
+        # Создаем RichText с форматированием Times New Roman 12pt
         rt = RichText()
-        rt.add("Заинтересованное лицо:", bold=True, font='Times New Roman')
-        rt.add(f"\n{fio}", font='Times New Roman')
+        rt.add("Заинтересованное лицо:", bold=True, font='Times New Roman', size=12)
+        rt.add(f"\n{fio}", font='Times New Roman', size=12)
         
         if birth_info:
-            rt.add("\nДата и место рождения: ", bold=True, font='Times New Roman')
-            rt.add(f"{birth_info};", font='Times New Roman')
+            rt.add("\nДата и место рождения: ", bold=True, font='Times New Roman', size=12)
+            rt.add(f"{birth_info};", font='Times New Roman', size=12)
         
         if address:
-            rt.add("\nАдрес проживания: ", bold=True, font='Times New Roman')
-            rt.add(f"{address};", font='Times New Roman')
+            rt.add("\nАдрес проживания: ", bold=True, font='Times New Roman', size=12)
+            rt.add(f"{address};", font='Times New Roman', size=12)
         
         return rt
 
