@@ -2706,7 +2706,7 @@ JSON:
                     # Если доля = 1/1 или не указана (полная собственность) → индивидуальная
                     # Если доля дробная (1/2, 1/3 и т.д.) → общедолевая
                     if share and share != "1/1":
-                        ownership_type = "общая долевая собственность"
+                        ownership_type = "общедолевая собственность"
                         parts.append(ownership_type)
                         parts.append(f"{share} доля")
                     else:
