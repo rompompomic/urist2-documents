@@ -1954,6 +1954,10 @@ JSON:
         Returns:
             ИНН из реестра или фоллбэк из словаря
         """
+        # СПЕЦИАЛЬНАЯ ОБРАБОТКА для ВТБ
+        if bank_name and "ВТБ" in bank_name.upper():
+            return "7702070139"
+        
         # Извлекаем ключевые слова для поиска
         keywords = DocumentProcessor.extract_search_keywords(bank_name)
         
@@ -2101,6 +2105,11 @@ JSON:
             return ("", "")
 
         original = name.strip()
+        
+        # СПЕЦИАЛЬНАЯ ОБРАБОТКА для ВТБ (все варианты написания)
+        name_upper = original.upper()
+        if "ВТБ" in name_upper and "БАНК" in name_upper:
+            return ("ВТБ", "ПАО «ВТБ»")
         
         # СНАЧАЛА применяем нормализацию МФО/МКК (убираем "МФО:", историю, кавычки)
         canonical_name = DocumentProcessor.normalize_creditor_name(original)
