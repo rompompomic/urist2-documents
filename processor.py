@@ -3429,8 +3429,8 @@ JSON:
 
             # ИНН кредитора
             инн_display = первый_кредит.get("ИНН_кредитора") or DocumentProcessor.get_bank_inn(кредитор_display)
-            # Добавляем префикс "ИНН " если ИНН найден
-            if инн_display:
+            # Добавляем префикс "ИНН " если ИНН найден и его ещё нет
+            if инн_display and not инн_display.startswith("ИНН "):
                 инн_display = f"ИНН {инн_display}"
 
             # Создаем отдельную строку для каждого договора
