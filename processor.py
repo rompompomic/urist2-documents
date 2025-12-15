@@ -2730,11 +2730,15 @@ JSON:
                     # Определяем тип собственности по доле владельца
                     share = ""
                     if owner_info:
-                        share = owner_info.get("Доля", "")
+                        share = owner_info.get("Доля", "").strip()
+                    
+                    # Проверяем, является ли "доля" реальной долей (формат X/Y) или текстом
+                    # Если в поле "Доля" написан текст вроде "общая совместная собственность" - игнорируем
+                    is_real_fraction = share and ("/" in share or share == "1")
                     
                     # Если доля = 1/1 или не указана (полная собственность) → индивидуальная
                     # Если доля дробная (1/2, 1/3 и т.д.) → общедолевая
-                    if share and share != "1/1":
+                    if is_real_fraction and share != "1/1" and share != "1":
                         ownership_type = "общедолевая собственность"
                         parts.append(ownership_type)
                         parts.append(f"{share} доля")
