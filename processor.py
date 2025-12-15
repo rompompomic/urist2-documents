@@ -2698,14 +2698,20 @@ JSON:
 
                 # Тип собственности и доля
                 if owners and isinstance(owners, list) and len(owners) > 0:
-                    ownership_type = "общая долевая собственность" if len(owners) > 1 else "индивидуальная собственность"
-                    parts.append(ownership_type)
-
-                    # Доля конкретного владельца
+                    # Определяем тип собственности по доле владельца
+                    share = ""
                     if owner_info:
                         share = owner_info.get("Доля", "")
-                        if share and share != "1/1":
-                            parts.append(f"{share} доля")
+                    
+                    # Если доля = 1/1 или не указана (полная собственность) → индивидуальная
+                    # Если доля дробная (1/2, 1/3 и т.д.) → общедолевая
+                    if share and share != "1/1":
+                        ownership_type = "общая долевая собственность"
+                        parts.append(ownership_type)
+                        parts.append(f"{share} доля")
+                    else:
+                        ownership_type = "индивидуальная собственность"
+                        parts.append(ownership_type)
 
                 # Кадастровый номер
                 if kadaster:
