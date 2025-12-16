@@ -3430,13 +3430,26 @@ JSON:
                 "Штрафы_пени": просрочка,
             })
 
-        # merge_credit_reports уже сделал дедупликацию, НЕ делаем её повторно!
-        # Используем credit напрямую без дополнительной дедупликации
-        # (дедупликация уже сделана в merge_credit_reports с учётом первоначальной суммы)
-        unique_credits = {
-            f"{credit['Кредитор_normalized']}|{credit['Дата_договора']}|{credit.get('Сумма_обязательства', 0)}": credit
-            for credit in all_credits_list
-        }
+        # Дедупликация кредитов по уникальному ключу
+        # Ключ: кредитор + дата договора + сумма обязательства + текущий долг
+        unique_credits = {}
+        for credit in all_credits_list:
+            # Формируем ключ с учетом всех важных параметров
+            key = (
+                credit['Кредитор_normalized'],
+                credit['Дата_договора'],
+                float(credit.get('Сумма_обязательства', 0)),
+                float(credit.get('Сумма', 0))
+            )
+            
+            # Если такого ключа еще нет - добавляем
+            # Если уже есть - оставляем тот, что с большей суммой долга (более актуальный)
+            if key not in unique_credits:
+                unique_credits[key] = credit
+            else:
+                existing = unique_credits[key]
+                if credit.get('Сумма', 0) > existing.get('Сумма', 0):
+                    unique_credits[key] = credit
 
         # Группируем уникальные кредиты по нормализованному имени кредитора
         credits_by_creditor = defaultdict(list)
