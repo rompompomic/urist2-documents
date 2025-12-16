@@ -32,7 +32,7 @@ else:
 # Настройки приложения
 app.config['UPLOAD_FOLDER'] = Path('uploads')
 app.config['OUTPUT_FOLDER'] = Path('outputs')
-app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_FILE_SIZE', 50 * 1024 * 1024))  # По умолчанию 50MB
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_FILE_SIZE', 200 * 1024 * 1024))  # По умолчанию 200MB
 app.config['DATABASE'] = os.getenv('DATABASE_PATH', 'debtors.db')
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
@@ -58,6 +58,15 @@ ALLOWED_EXTENSIONS = {'pdf'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """Обработчик ошибки превышения максимального размера запроса."""
+    max_size_mb = app.config['MAX_CONTENT_LENGTH'] / (1024 * 1024)
+    return jsonify({
+        'error': f'Файл слишком большой. Максимальный размер: {max_size_mb:.0f} MB',
+        'max_size': app.config['MAX_CONTENT_LENGTH']
+    }), 413
 
 def init_db():
     conn = sqlite3.connect(app.config['DATABASE'])
@@ -860,6 +869,8 @@ def upload_documents():
     files = request.files.getlist('files[]')
     lawyer = request.form.get('lawyer', 'urist1')
     
+    print(f"[UPLOAD] Получено файлов в запросе: {len(files)}")
+    
     if not files or all(file.filename == '' for file in files):
         return jsonify({'error': 'No files selected'}), 400
     
@@ -868,15 +879,53 @@ def upload_documents():
     debtor_folder.mkdir(exist_ok=True)
     
     uploaded_files = []
+    skipped_files = []
+    max_size = app.config['MAX_CONTENT_LENGTH']
+    
     for file in files:
-        if file and allowed_file(file.filename):
-            filename = custom_secure_filename(file.filename)
-            filepath = debtor_folder / filename
+        if not file:
+            continue
+            
+        if not allowed_file(file.filename):
+            print(f"[UPLOAD] ✗ Пропущен (не PDF): {file.filename}")
+            skipped_files.append({'filename': file.filename, 'reason': 'Не PDF файл'})
+            continue
+        
+        filename = custom_secure_filename(file.filename)
+        filepath = debtor_folder / filename
+        
+        try:
+            # Сохраняем файл
             file.save(filepath)
+            file_size = filepath.stat().st_size
+            
+            # Проверяем размер после сохранения
+            if file_size > max_size:
+                filepath.unlink()  # Удаляем слишком большой файл
+                print(f"[UPLOAD] ✗ Слишком большой: {filename} ({file_size / (1024*1024):.1f} MB)")
+                skipped_files.append({
+                    'filename': file.filename, 
+                    'reason': f'Размер {file_size / (1024*1024):.1f} MB превышает лимит {max_size / (1024*1024):.0f} MB'
+                })
+                continue
+            
             uploaded_files.append(filepath)
+            print(f"[UPLOAD] ✓ Сохранен: {filename} ({file_size / 1024:.1f} KB)")
+            
+        except Exception as e:
+            print(f"[UPLOAD] ✗ Ошибка сохранения {filename}: {e}")
+            skipped_files.append({'filename': file.filename, 'reason': str(e)})
     
     if not uploaded_files:
-        return jsonify({'error': 'No valid PDF files provided'}), 400
+        error_msg = 'No valid PDF files provided'
+        if skipped_files:
+            error_msg += f' (пропущено файлов: {len(skipped_files)})'
+        print(f"[UPLOAD] ✗ {error_msg}")
+        return jsonify({'error': error_msg, 'skipped': skipped_files}), 400
+    
+    print(f"[UPLOAD] Успешно загружено: {len(uploaded_files)} из {len(files)} файлов")
+    if skipped_files:
+        print(f"[UPLOAD] Пропущено: {len(skipped_files)} файлов")
     
     conn = get_db()
     cursor = conn.cursor()
@@ -903,11 +952,14 @@ def upload_documents():
     conn.commit()
     conn.close()
     
-    print(f"[UPLOAD] Added debtor {debtor_id} to processing queue")
+    print(f"[UPLOAD] Должник {debtor_id} добавлен в очередь обработки (файлов: {len(uploaded_files)})")
     
     return jsonify({
         'success': True,
-        'debtor_id': debtor_id
+        'debtor_id': debtor_id,
+        'uploaded_count': len(uploaded_files),
+        'total_count': len(files),
+        'skipped': skipped_files if skipped_files else []
     })
 
 def process_documents_for_job(debtor_id):

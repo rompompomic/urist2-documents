@@ -618,6 +618,7 @@ JSON ДЛЯ ВЫПИСКИ С ИМУЩЕСТВОМ:
                 {
                         "ФИО": "...",
                         "Доля": "...",
+                        "Тип_собственности": "индивидуальная собственность/общедолевая собственность/общая совместная собственность",
                         "Вид_права": "...",
                         "Документ": "...",
                         "Дата_регистрации": "ДД.ММ.ГГГГ"
@@ -2727,24 +2728,21 @@ JSON:
 
                 # Тип собственности и доля
                 if owners and isinstance(owners, list) and len(owners) > 0:
-                    # Определяем тип собственности по доле владельца
+                    # Используем тип собственности извлеченный GPT из документа
+                    ownership_type = ""
                     share = ""
                     if owner_info:
+                        ownership_type = (owner_info.get("Тип_собственности") or "").strip()
                         share = (owner_info.get("Доля") or "").strip()
                     
-                    # Проверяем, является ли "доля" реальной долей (формат X/Y) или текстом
-                    # Если в поле "Доля" написан текст вроде "общая совместная собственность" - игнорируем
-                    is_real_fraction = share and ("/" in share or share == "1")
+                    # Добавляем тип собственности если он извлечен
+                    if ownership_type:
+                        parts.append(ownership_type)
                     
-                    # Если доля = 1/1 или не указана (полная собственность) → индивидуальная
-                    # Если доля дробная (1/2, 1/3 и т.д.) → общедолевая
-                    if is_real_fraction and share != "1/1" and share != "1":
-                        ownership_type = "общедолевая собственность"
-                        parts.append(ownership_type)
-                        parts.append(f"{share} доля")
-                    else:
-                        ownership_type = "индивидуальная собственность"
-                        parts.append(ownership_type)
+                    # Добавляем долю если она указана и это реальная дробь
+                    if share and ("/" in share or share == "1"):
+                        if share != "1/1" and share != "1":
+                            parts.append(f"{share} доля")
 
                 # Кадастровый номер
                 if kadaster:
@@ -5840,11 +5838,11 @@ JSON формат:
 
             # Определяем batch size и overlap в зависимости от типа отчета
             if doc_type == "отчет_нбки":
-                BATCH_SIZE = 5  # НБКИ: маленькие батчи по 5 страниц
+                BATCH_SIZE = 50  # НБКИ: маленькие батчи по 5 страниц
                 OVERLAP_PAGES = 5  # НБКИ: overlap 5 страниц
             elif doc_type == "отчет_окб":
                 BATCH_SIZE = 50  # ОКБ: большие батчи
-                OVERLAP_PAGES = 3  # ОКБ: overlap 3 страницы
+                OVERLAP_PAGES = 5  # ОКБ: overlap 3 страницы
             else:  # БКИ
                 BATCH_SIZE = 50
                 OVERLAP_PAGES = 0  # БКИ: без overlap

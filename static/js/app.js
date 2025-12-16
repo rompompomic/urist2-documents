@@ -9,6 +9,9 @@ const LAWYER_NAMES = {
     'urist3': 'Переплетчиков Роман Борисович'
 };
 
+// Конфигурация загрузки (синхронизируем с сервером)
+const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB в байтах
+
 function getLawyerDisplayName(lawyerCode) {
     return LAWYER_NAMES[lawyerCode] || lawyerCode;
 }
@@ -28,6 +31,9 @@ function showNotification(message, type = 'info', duration = 3000) {
     
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
+    
+    // Поддержка многострочного текста
+    notification.style.whiteSpace = 'pre-line';
     notification.textContent = message;
     
     container.appendChild(notification);
@@ -168,15 +174,38 @@ dropZone.addEventListener('drop', (e) => {
     dropZone.classList.remove('drag-over');
     
     const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.pdf'));
-    selectedFiles.push(...files);
-    updateFileList();
+    addFilesWithValidation(files);
 });
 
 fileInput.addEventListener('change', (e) => {
     const files = Array.from(e.target.files).filter(f => f.name.endsWith('.pdf'));
-    selectedFiles.push(...files);
-    updateFileList();
+    addFilesWithValidation(files);
 });
+
+function addFilesWithValidation(files) {
+    let tooLargeCount = 0;
+    const validFiles = [];
+    
+    files.forEach(file => {
+        if (file.size > MAX_FILE_SIZE) {
+            tooLargeCount++;
+            console.warn(`Файл ${file.name} слишком большой: ${(file.size / (1024*1024)).toFixed(1)} MB`);
+        } else {
+            validFiles.push(file);
+        }
+    });
+    
+    selectedFiles.push(...validFiles);
+    updateFileList();
+    
+    if (tooLargeCount > 0) {
+        showNotification(
+            `⚠ ${tooLargeCount} файлов пропущено: размер превышает ${MAX_FILE_SIZE / (1024*1024)} MB`,
+            'warning',
+            5000
+        );
+    }
+}
 
 function updateFileList() {
     fileList.innerHTML = '';
@@ -184,8 +213,13 @@ function updateFileList() {
     selectedFiles.forEach((file, index) => {
         const item = document.createElement('div');
         item.className = 'file-item';
+        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        const sizeText = file.size < 1024 * 1024 
+            ? `${(file.size / 1024).toFixed(0)} KB`
+            : `${fileSizeMB} MB`;
+        
         item.innerHTML = `
-            <span>${file.name}</span>
+            <span>${file.name} <small style="color: #666;">(${sizeText})</small></span>
             <span class="file-remove" data-index="${index}">&times;</span>
         `;
         fileList.appendChild(item);
@@ -230,7 +264,25 @@ document.getElementById('submitUploadBtn').addEventListener('click', async () =>
             uploadModal.classList.remove('show');
             selectedFiles = [];
             updateFileList();
-            showNotification('Файлы успешно загружены! Обработка началась...', 'success');
+            
+            // Показываем детальную информацию о загрузке
+            let message = `✓ Загружено: ${data.uploaded_count} из ${data.total_count} файлов`;
+            if (data.skipped && data.skipped.length > 0) {
+                message += `\n\n⚠ Пропущено файлов: ${data.skipped.length}`;
+                data.skipped.slice(0, 5).forEach(skipped => {
+                    const shortFilename = skipped.filename.length > 40 
+                        ? skipped.filename.substring(0, 37) + '...' 
+                        : skipped.filename;
+                    message += `\n  • ${shortFilename}`;
+                    message += `\n    ${skipped.reason}`;
+                });
+                if (data.skipped.length > 5) {
+                    message += `\n  ... и еще ${data.skipped.length - 5} файлов`;
+                }
+            }
+            message += '\n\nОбработка началась...';
+            
+            showNotification(message, 'success', 6000);
             loadDebtors();
             
             setTimeout(() => {
