@@ -820,7 +820,7 @@ JSON (СТРОГО этот формат):
 }}""",
         },
         "отчет_нбки": {
-            "keywords": ["нбки", "национальное бюро кредитных историй", "кредитный отчет для субъекта", "кредитная история нбки", "nbch", "отчет нбки"],
+            "keywords": ["нбки", "нбки отчет", "отчет нбки", "национальное бюро кредитных историй", "кредитный отчет для субъекта", "кредитная история нбки", "nbch", "nbki"],
             "prompt": """
 
 Найди раздел с заголовком "Обязательства и их исполнение" - там начинается список кредиторов.
@@ -1572,12 +1572,19 @@ JSON:
                     config = DocumentProcessor.DOCUMENT_TYPES.get("егрн_выписка", {})
                     return "егрн_выписка", config.get("prompt", "")
 
-            # БКИ/НБКИ/ОКБ отчёты - проверяем по специфичным словам
-            if "нбки" in text_lower or "национальное бюро кредитных историй" in text_lower:
+            # БКИ/НБКИ/ОКБ отчёты - проверяем по специфичным словам (ПОРЯДОК ВАЖЕН!)
+            # Сначала НБКИ (самый специфичный)
+            if "нбки" in text_lower or "национальное бюро кредитных историй" in text_lower or "nbch" in text_lower or "nbki" in text_lower:
                 config = DocumentProcessor.DOCUMENT_TYPES.get("отчет_нбки", {})
                 return "отчет_нбки", config.get("prompt", "")
             
-            if "кредитная история" in text_lower or "скоринг" in text_lower or "бки" in text_lower:
+            # Потом ОКБ
+            if "окб" in text_lower or "объединенное кредитное бюро" in text_lower:
+                config = DocumentProcessor.DOCUMENT_TYPES.get("отчет_окб", {})
+                return "отчет_окб", config.get("prompt", "")
+            
+            # В последнюю очередь БКИ (самый общий)
+            if "бки" in text_lower or "скоринг" in text_lower or ("кредитная история" in text_lower and "бюро" in text_lower):
                 config = DocumentProcessor.DOCUMENT_TYPES.get("отчет_бки", {})
                 return "отчет_бки", config.get("prompt", "")
 
@@ -5851,7 +5858,7 @@ JSON формат:
             # Определяем batch size и overlap в зависимости от типа отчета
             if doc_type == "отчет_нбки":
                 BATCH_SIZE = 50  # НБКИ: большие батчи
-                OVERLAP_PAGES = 5  # НБКИ: overlap 5 страниц
+                OVERLAP_PAGES = 10  # НБКИ: overlap 5 страниц
             elif doc_type == "отчет_окб":
                 BATCH_SIZE = 50  # ОКБ: большие батчи
                 OVERLAP_PAGES = 20  # ОКБ: overlap 20 страниц
