@@ -451,16 +451,20 @@ async function viewDebtor(debtorId) {
                     keywords: ['паспорт', 'pasport', 'инн', 'inn', 'снилс', 'snils', 'свидетельство о браке', 'свидетельство о разводе', 'брак', 'brak', 'развод', 'razvod'],
                     docs: []
                 },
+                'Дети': {
+                    keywords: ['дети', 'детей', 'child', 'children', 'свидетельство о рождении', 'spravka o rozhdenii', 'birth certificate'],
+                    docs: []
+                },
                 'Трудовые документы': {
                     keywords: ['трудовая', 'trudovaya', 'trudovoj', 'сведения о трудовой', 'svedeniya o trudovoj', 'справка с места работы', 'этк', 'etk', 'szv'],
                     docs: []
                 },
                 'Справки о доходах': {
-                    keywords: ['2-ндфл', '2ндфл', '2 ndfl', '2ndfl', 'справка о доходах', 'spravka o dohodah', 'справка сфр', 'пенсия', 'pensiya', 'пособие', 'posobie', 'пособий'],
+                    keywords: ['2-ндфл', '2ндфл', '2 ndfl', '2ndfl', 'справка о доходах', 'spravka o dohodah', 'справка сфр', 'пенсия', 'pensiya', 'пособие', 'posobie', 'пособий', 'доходах', 'dohodah'],
                     docs: []
                 },
                 'Пособия и льготы': {
-                    keywords: ['егиссо', 'egisso', 'пособия', 'posobiya', 'льгот', 'lgot', 'выплат', 'vyplat', 'социальных выплат', 'едв', 'edv'],
+                    keywords: ['егиссо', 'ЕГИССО', 'egisso', 'пособия', 'posobiya', 'льгот', 'lgot', 'выплат', 'vyplat', 'социальных выплат', 'едв', 'edv'],
                     docs: []
                 },
                 'Кредитные истории': {
@@ -484,7 +488,7 @@ async function viewDebtor(debtorId) {
                     docs: []
                 },
                 'Налоги и сборы': {
-                    keywords: ['налог', 'nalog', 'фнс', 'fns', 'ифнс', 'ifns', 'уведомление', 'uvedomlenie'],
+                    keywords: ['налог', 'nalog', 'фнс', 'fns', 'ифнс', 'ifns', 'уведомление', 'uvedomlenie',  'ЕГРИП' , 'егрип'],
                     docs: []
                 },
                 'Другие документы': {
