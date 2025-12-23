@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from decimal import Decimal
 
-p = Path('outputs/4299c352-4359-40b4-85c8-85508ce24b7a/result.json')
+p = Path('outputs/4d9ab0fc-33d4-46d9-8a7f-1023cb11ca87/result.json')
 with open(p, encoding='utf-8') as f:
     d = json.load(f)
 

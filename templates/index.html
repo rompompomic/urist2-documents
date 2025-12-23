@@ -4,12 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Система учета должников</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=4">
+    <link rel="stylesheet" href="/static/css/style.css?v=5">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Система учета должников</h1>
+            <div class="header-top">
+                <h1>Система учета должников</h1>
+                <button id="themeToggle" class="theme-toggle" title="Переключить тему" aria-label="Переключить тему">
+                    <span class="theme-icon-light">☀️</span>
+                    <span class="theme-icon-dark">🌙</span>
+                </button>
+            </div>
             <div id="queueStatus" class="queue-status" style="display: none;">
                 <span class="queue-label">Очередь обработки:</span>
                 <span id="queueInfo" class="queue-info"></span>

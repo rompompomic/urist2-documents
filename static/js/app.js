@@ -2,6 +2,25 @@ let selectedFiles = [];
 let currentDebtorId = null;
 let previousStatuses = {}; // Для отслеживания изменений статусов
 
+// ============================================
+// ТЕМА (СВЕТЛАЯ/ТЕМНАЯ)
+// ============================================
+
+// Инициализация темы при загрузке страницы
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+}
+
+// Переключение темы
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+}
+
 // Маппинг юристов для отображения
 const LAWYER_NAMES = {
     'urist1': 'Изосимов Иван Дмитриевич',
@@ -1152,6 +1171,19 @@ document.getElementById('updateRegistryBtn')?.addEventListener('click', async ()
         btn.textContent = '🔄';
     }
 });
+
+// ============================================
+// ИНИЦИАЛИЗАЦИЯ ТЕМЫ
+// ============================================
+
+// Инициализируем тему при загрузке
+initTheme();
+
+// Добавляем обработчик переключения темы
+const themeToggle = document.getElementById('themeToggle');
+if (themeToggle) {
+    themeToggle.addEventListener('click', toggleTheme);
+}
 
 // Запрашиваем разрешение на уведомления при загрузке
 requestNotificationPermission();

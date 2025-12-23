@@ -205,14 +205,16 @@ class BankRegistryUpdater:
         except Exception as e:
             logger.error(f"[ERROR] Ошибка при обновлении: {e}")
             
-            # Сохраняем информацию об ошибке
+            # При ошибке сохраняем текущее состояние реестров, а не нули
+            from processor import DocumentProcessor
+            
             update_info = {
                 "last_update": datetime.now().isoformat(),
                 "next_update": self._get_next_update_time(),
-                "banks_count": 0,
+                "banks_count": len(DocumentProcessor.BANK_REGISTRY),
                 "banks_updated_count": 0,
-                "mfo_count": 0,
-                "registry_size": 0,
+                "mfo_count": len(DocumentProcessor.MFO_REGISTRY),
+                "registry_size": len(DocumentProcessor.BANK_REGISTRY) + len(DocumentProcessor.MFO_REGISTRY),
                 "status": "error",
                 "error": str(e)
             }
