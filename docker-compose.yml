@@ -9,6 +9,10 @@ services:
       - PORT=5000
     env_file:
       - .env
+    # Ограничения ресурсов
+    mem_limit: 4g
+    mem_reservation: 2g
+    cpus: 2
     volumes:
       # Сохраняем данные между перезапусками
       - ./uploads:/app/uploads
