@@ -24,6 +24,7 @@ from docxtpl import DocxTemplate, RichText  # Для динамических т
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import quote_plus
+import psutil  # Для мониторинга памяти
 
 # Load environment variables from .env file
 load_dotenv()
@@ -1862,6 +1863,28 @@ JSON:
         return "общий", DocumentProcessor.DOCUMENT_TYPES.get("общий", {}).get(
             "prompt", "Проанализируй документ и верни JSON"
         )
+
+    @staticmethod
+    def get_memory_usage() -> str:
+        """Возвращает текущее использование памяти процессом в удобочитаемом формате"""
+        process = psutil.Process()
+        mem_info = process.memory_info()
+        mem_mb = mem_info.rss / 1024 / 1024  # Конвертируем в MB
+        mem_gb = mem_mb / 1024  # Конвертируем в GB
+        
+        if mem_gb >= 1:
+            return f"{mem_gb:.2f} GB"
+        else:
+            return f"{mem_mb:.0f} MB"
+    
+    @staticmethod
+    def log_memory(label: str = ""):
+        """Выводит текущее использование памяти в лог"""
+        mem_usage = DocumentProcessor.get_memory_usage()
+        if label:
+            print(f"      [MEMORY] {label}: {mem_usage}")
+        else:
+            print(f"      [MEMORY] Использование: {mem_usage}")
 
     @staticmethod
     def clean_json_response(text: str) -> str:
@@ -6450,6 +6473,7 @@ JSON формат:
 
         print(f"   > {pdf_path.name}")
         print(f"      Тип: {doc_type}")
+        DocumentProcessor.log_memory("Начало обработки")
 
         start_time = time.time()
 
@@ -6461,6 +6485,7 @@ JSON формат:
             print(f"      Конвертация PDF в изображения...", end=" ", flush=True)
             pdf = pdfium.PdfDocument(str(pdf_path))
             total_pages = len(pdf)
+            DocumentProcessor.log_memory("После загрузки PDF")
             
             # Для БКИ ограничиваем 25 страницами, для ОКБ - все страницы
             if doc_type == "отчет_бки":
@@ -6475,6 +6500,7 @@ JSON формат:
                 pil_image = bitmap.to_pil()
                 pages.append(pil_image)
             print(f"OK ({len(pages)} из {total_pages} стр.)")
+            DocumentProcessor.log_memory("После конвертации в изображения")
 
             # Сохраняем страницы
             print(f"      Сохранение страниц...", end=" ", flush=True)
@@ -6485,6 +6511,26 @@ JSON формат:
                     page.save(tmp_path, 'JPEG', quality=95, optimize=True)
                     page_images.append(tmp_path)
             print("OK")
+            
+            # 🚀 ОПТИМИЗАЦИЯ ПАМЯТИ: Закрываем PIL изображения и очищаем список
+            for page in pages:
+                page.close()
+            pages.clear()
+            pdf.close()
+            import gc
+            gc.collect()
+            print(f"      [MEMORY] Освобождена память от {len(page_images)} изображений")
+            print("OK")
+            
+            # 🚀 ОПТИМИЗАЦИЯ ПАМЯТИ: Закрываем PIL изображения и очищаем список
+            for page in pages:
+                page.close()
+            pages.clear()
+            pdf.close()
+            import gc
+            gc.collect()
+            print(f"      [MEMORY] Освобождена память от {len(page_images)} изображений")
+            DocumentProcessor.log_memory("После очистки PIL объектов")
 
             # Определяем batch size и overlap в зависимости от типа отчета
             if doc_type == "отчет_нбки":
@@ -6889,6 +6935,16 @@ JSON (СТРОГО этот формат):
                         print(f"ERROR ({str(e)[:40]})")
                         if not error:
                             error = f"Batch {batch_num}: {str(e)}"
+                    
+                    # 🚀 ОПТИМИЗАЦИЯ ПАМЯТИ: Очищаем батч после обработки
+                    finally:
+                        # Удаляем ссылки на изображения батча
+                        batch_pages = None
+                        # Запускаем сборку мусора каждые 3 батча
+                        if batch_num % 3 == 0:
+                            import gc
+                            gc.collect()
+                            DocumentProcessor.log_memory(f"После батча {batch_num}")
                 
                 # Объединяем результаты всех батчей
                 if doc_type == "постановление_пристава":
@@ -7120,12 +7176,24 @@ JSON (СТРОГО этот формат):
                     error = str(e)
 
             
-            # Удаляем временные файлы
+            # 🚀 ОПТИМИЗАЦИЯ ПАМЯТИ: Удаляем временные файлы и очищаем память
+            print(f"      [MEMORY] Удаление {len(page_images)} временных файлов...")
             for tmp_path in page_images:
                 try:
                     os.unlink(tmp_path)
                 except:
                     pass
+            
+            # Очищаем список и запускаем сборщик мусора
+            page_images.clear()
+            all_credits = None
+            extracted_data_temp = extracted_data.copy() if extracted_data else {}
+            extracted_data = None
+            import gc
+            gc.collect()
+            extracted_data = extracted_data_temp
+            print(f"      [MEMORY] Память освобождена")
+            DocumentProcessor.log_memory("После финальной очистки (кредитные отчеты)")
 
             elapsed = time.time() - start_time
 
@@ -7252,12 +7320,24 @@ JSON (СТРОГО этот формат):
                     extracted_data = {}
                     error = str(e)
             
-            # Удаляем временные файлы
+            # 🚀 ОПТИМИЗАЦИЯ ПАМЯТИ: Удаляем временные файлы и очищаем память
+            print(f"      [MEMORY] Удаление {len(page_images)} временных файлов...")
             for tmp_path in page_images:
                 try:
                     os.unlink(tmp_path)
                 except:
                     pass
+            
+            # Очищаем список и запускаем сборщик мусора
+            page_images.clear()
+            all_credits = None
+            extracted_data_temp = extracted_data.copy() if extracted_data else {}
+            extracted_data = None
+            import gc
+            gc.collect()
+            extracted_data = extracted_data_temp
+            print(f"      [MEMORY] Память освобождена")
+            DocumentProcessor.log_memory("После финальной очистки (небольшие отчеты)")
 
             elapsed = time.time() - start_time
             total_pages = len(pages)
@@ -7277,6 +7357,8 @@ JSON (СТРОГО этот формат):
         print(f"      Конвертация PDF в изображения...", end=" ", flush=True)
         pdf = pdfium.PdfDocument(str(pdf_path))
         total_pages = len(pdf)
+        DocumentProcessor.log_memory("После загрузки PDF (обычный)")
+        
         pages = []
         for i in range(total_pages):
             page = pdf[i]
@@ -7284,6 +7366,8 @@ JSON (СТРОГО этот формат):
             pil_image = bitmap.to_pil()
             pages.append(pil_image)
         print(f"OK ({total_pages} стр.)")
+        DocumentProcessor.log_memory("После рендера страниц")
+        
         saved_page_paths: List[str] = []
         extracted_data: Dict[str, Any] = {}
         error: Optional[str] = None
@@ -7297,6 +7381,15 @@ JSON (СТРОГО этот формат):
                     page.save(tmp_path, "JPEG", quality=95, optimize=True)
                     saved_page_paths.append(tmp_path)
             print(f"OK")
+            
+            # Очищаем PIL объекты
+            for page in pages:
+                page.close()
+            pages.clear()
+            pdf.close()
+            import gc
+            gc.collect()
+            DocumentProcessor.log_memory("После сохранения и очистки PIL")
 
             # Create multi-page prompt
             multi_page_prompt = f"""{base_prompt}
@@ -7355,6 +7448,12 @@ JSON (СТРОГО этот формат):
                     os.remove(tmp_path)
                 except OSError:
                     continue
+            
+            # Очищаем память
+            saved_page_paths.clear()
+            import gc
+            gc.collect()
+            DocumentProcessor.log_memory("После удаления временных файлов (обычный)")
 
         elapsed = time.time() - start_time
         return DocumentOutput(
