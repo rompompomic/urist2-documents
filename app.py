@@ -441,6 +441,10 @@ def start_worker():
 def index():
     return render_template('index.html')
 
+@app.route('/favicon.ico')
+def favicon():
+    return send_file('static/favicon.ico', mimetype='image/x-icon')
+
 @app.route('/api/debtors', methods=['GET'])
 def get_debtors():
     search_query = request.args.get('search', '')
