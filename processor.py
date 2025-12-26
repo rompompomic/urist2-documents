@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import random
 import re
 import tempfile
 import time
@@ -2233,6 +2234,102 @@ JSON:
         return ""
 
     @staticmethod
+    def validate_inn(inn: str) -> bool:
+        """Проверяет корректность ИНН по контрольной сумме.
+        
+        Args:
+            inn: ИНН (10 или 12 цифр)
+            
+        Returns:
+            True если ИНН корректный, False если нет
+        """
+        if not inn or not inn.isdigit():
+            return False
+        
+        if len(inn) == 10:
+            # ИНН юридического лица (10 цифр)
+            coefficients = [2, 4, 10, 3, 5, 9, 4, 6, 8]
+            checksum = sum(int(inn[i]) * coefficients[i] for i in range(9)) % 11 % 10
+            return checksum == int(inn[9])
+        
+        elif len(inn) == 12:
+            # ИНН физического лица (12 цифр)
+            # Проверка 11-й цифры
+            coefficients1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
+            checksum1 = sum(int(inn[i]) * coefficients1[i] for i in range(10)) % 11 % 10
+            
+            # Проверка 12-й цифры
+            coefficients2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
+            checksum2 = sum(int(inn[i]) * coefficients2[i] for i in range(11)) % 11 % 10
+            
+            return checksum1 == int(inn[10]) and checksum2 == int(inn[11])
+        
+        return False
+    
+    @staticmethod
+    def normalize_company_name_for_comparison(name: str) -> str:
+        """Нормализует название компании для сравнения.
+        
+        Args:
+            name: Название компании
+            
+        Returns:
+            Нормализованное название (только буквы, нижний регистр)
+        """
+        if not name:
+            return ""
+        
+        # Убираем ОПФ, кавычки, знаки препинания
+        name = name.upper()
+        for opf in ["ПАО", "АО", "ООО", "ОАО", "МФК", "МКК", "МФО", "МИКРОКРЕДИТНАЯ", "МИКРОФИНАНСОВАЯ"]:
+            name = name.replace(opf, " ")
+        
+        # Убираем все кроме букв и пробелов
+        name = re.sub(r'[^А-ЯЁA-Z\s]', ' ', name)
+        # Убираем множественные пробелы
+        name = re.sub(r'\s+', ' ', name).strip()
+        
+        return name.lower()
+    
+    @staticmethod
+    def check_company_name_match(search_name: str, found_name: str, threshold: float = 0.6) -> bool:
+        """Проверяет совпадение названий компаний.
+        
+        Args:
+            search_name: Искомое название
+            found_name: Найденное название
+            threshold: Порог совпадения (0.0-1.0)
+            
+        Returns:
+            True если названия достаточно похожи
+        """
+        search = DocumentProcessor.normalize_company_name_for_comparison(search_name)
+        found = DocumentProcessor.normalize_company_name_for_comparison(found_name)
+        
+        if not search or not found:
+            return False
+        
+        # Точное совпадение
+        if search == found:
+            return True
+        
+        # Проверка вхождения
+        if search in found or found in search:
+            return True
+        
+        # Подсчет совпадающих слов
+        search_words = set(search.split())
+        found_words = set(found.split())
+        
+        if not search_words or not found_words:
+            return False
+        
+        common = search_words & found_words
+        similarity = len(common) / max(len(search_words), len(found_words))
+        
+        return similarity >= threshold
+
+    @staticmethod
     def parse_inn_and_address_from_rusprofile(company_name: str) -> tuple[Optional[str], Optional[str]]:
         """Парсит ИНН и адрес организации с RusProfile.ru
         
@@ -2246,25 +2343,46 @@ JSON:
             return None, None
             
         try:
+            # Рандомный User-Agent для обхода защиты от ботов
+            import random
+            user_agents = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            ]
+            
             headers = {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/121.0.0.0 Safari/537.36"
-                ),
-                "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+                "User-Agent": random.choice(user_agents),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Accept-Encoding": "gzip, deflate, br",
+                "DNT": "1",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Cache-Control": "max-age=0",
             }
             
             session = requests.Session()
             session.headers.update(headers)
+            
+            # Человеческая задержка перед началом
+            time.sleep(random.uniform(0.5, 1.5))
             
             # 1️⃣ Поиск - получаем список результатов
             search_url = f"https://www.rusprofile.ru/search?query={quote_plus(company_name)}"
             response = session.get(search_url, timeout=15, allow_redirects=True)
             response.raise_for_status()
             
-            # Задержка 1 секунда для защиты от бана
-            time.sleep(1)
+            # Человеческая задержка после запроса (1.5-3 секунды)
+            time.sleep(random.uniform(1.5, 3.0))
             
             html = response.text
             soup = BeautifulSoup(html, "lxml")
@@ -2275,6 +2393,10 @@ JSON:
             # 2️⃣ СПОСОБ 1: Пробуем взять из списка (первый результат)
             item = soup.select_one("div.list-element")
             if item:
+                # Название компании из списка
+                company_name_tag = item.select_one("a.list-element__title")
+                found_company_name = company_name_tag.get_text(strip=True) if company_name_tag else ""
+                
                 # ИНН из списка
                 for span in item.select("div.list-element__row-info span"):
                     m = re.search(r"ИНН[:\s]+(\d{10}|\d{12})", span.get_text())
@@ -2287,8 +2409,21 @@ JSON:
                 if address_tag:
                     address = address_tag.get_text(strip=True)
                 
+                # ВАЛИДАЦИЯ: проверяем ИНН и название
+                if inn:
+                    # 1. Проверка контрольной суммы ИНН
+                    if not DocumentProcessor.validate_inn(inn):
+                        print(f"[RUSPROFILE] ⚠️ ИНН {inn} не прошел проверку контрольной суммы для '{company_name}'")
+                        inn = None
+                    
+                    # 2. Проверка совпадения названия компании
+                    elif found_company_name and not DocumentProcessor.check_company_name_match(company_name, found_company_name):
+                        print(f"[RUSPROFILE] ⚠️ Название не совпадает: искали '{company_name}', нашли '{found_company_name}'")
+                        inn = None
+                        address = None
+                
                 if inn or address:
-                    print(f"[RUSPROFILE] Найдено из списка для '{company_name}': ИНН={inn}, адрес={address}")
+                    print(f"[RUSPROFILE] ✅ Найдено из списка для '{company_name}': ИНН={inn}, адрес={address}")
                     return inn, address
             
             # 3️⃣ СПОСОБ 2: Идём в карточку компании
@@ -2296,14 +2431,27 @@ JSON:
             if link and link.get("href"):
                 card_url = "https://www.rusprofile.ru" + link["href"]
                 
-                # Задержка 1 секунда перед запросом карточки
-                time.sleep(1)
+                # Обновляем Referer для имитации перехода по ссылке
+                session.headers.update({
+                    "Referer": search_url,
+                    "Sec-Fetch-Site": "same-origin",
+                })
+                
+                # Человеческая задержка перед переходом (1-2 секунды)
+                time.sleep(random.uniform(1.0, 2.0))
                 
                 card_response = session.get(card_url, timeout=15, allow_redirects=True)
                 card_response.raise_for_status()
                 
+                # Человеческая задержка после загрузки карточки
+                time.sleep(random.uniform(0.8, 1.5))
+                
                 card_html = card_response.text
                 card_soup = BeautifulSoup(card_html, "lxml")
+                
+                # Название компании из карточки
+                company_title = card_soup.select_one("h1.company-name")
+                found_company_name = company_title.get_text(strip=True) if company_title else ""
                 
                 # ИНН с карточки
                 inn_tag = card_soup.select_one('[id^="clip_inn"]')
@@ -2323,12 +2471,28 @@ JSON:
                 if address_tag:
                     address = address_tag.get_text(" ", strip=True)
                 
+                # ВАЛИДАЦИЯ: проверяем ИНН и название
+                if inn:
+                    # 1. Проверка контрольной суммы ИНН
+                    if not DocumentProcessor.validate_inn(inn):
+                        print(f"[RUSPROFILE] ⚠️ ИНН {inn} не прошел проверку контрольной суммы для '{company_name}'")
+                        inn = None
+                    
+                    # 2. Проверка совпадения названия компании
+                    elif found_company_name and not DocumentProcessor.check_company_name_match(company_name, found_company_name):
+                        print(f"[RUSPROFILE] ⚠️ Название не совпадает: искали '{company_name}', нашли '{found_company_name}'")
+                        inn = None
+                        address = None
+                
                 if inn or address:
-                    print(f"[RUSPROFILE] Найдено из карточки для '{company_name}': ИНН={inn}, адрес={address}")
+                    print(f"[RUSPROFILE] ✅ Найдено из карточки для '{company_name}': ИНН={inn}, адрес={address}")
                     return inn, address
             
             # 4️⃣ СПОСОБ 3: Прямой редирект / карточка
             # Пробуем парсить как карточку
+            company_title = soup.select_one("h1.company-name")
+            found_company_name = company_title.get_text(strip=True) if company_title else ""
+            
             inn_tag = soup.select_one('[id^="clip_inn"]')
             if inn_tag:
                 text = inn_tag.get_text(strip=True)
@@ -2344,8 +2508,20 @@ JSON:
             if address_tag:
                 address = address_tag.get_text(" ", strip=True)
             
+            # ВАЛИДАЦИЯ: проверяем ИНН и название
+            if inn:
+                # 1. Проверка контрольной суммы ИНН
+                if not DocumentProcessor.validate_inn(inn):
+                    print(f"[RUSPROFILE] ⚠️ ИНН {inn} не прошел проверку контрольной суммы для '{company_name}'")
+                    return None, None
+                
+                # 2. Проверка совпадения названия компании
+                if found_company_name and not DocumentProcessor.check_company_name_match(company_name, found_company_name):
+                    print(f"[RUSPROFILE] ⚠️ Название не совпадает: искали '{company_name}', нашли '{found_company_name}'")
+                    return None, None
+            
             if inn or address:
-                print(f"[RUSPROFILE] Найдено (прямой редирект) для '{company_name}': ИНН={inn}, адрес={address}")
+                print(f"[RUSPROFILE] ✅ Найдено (прямой редирект) для '{company_name}': ИНН={inn}, адрес={address}")
             
             return inn, address
             

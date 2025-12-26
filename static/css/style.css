@@ -1533,7 +1533,8 @@ td:nth-child(5) {
 
 .notification-success {
     border-left-color: #4CAF50;
-    background: linear-gradient(to right, #e8f5e9 0%, white 100%);
+    background: linear-gradient(to right, rgba(76, 175, 80, 0.15) 0%, var(--bg-primary) 100%);
+    color: var(--text-primary);
 }
 
 .notification-success.show {
@@ -1551,17 +1552,20 @@ td:nth-child(5) {
 
 .notification-error {
     border-left-color: #f44336;
-    background: linear-gradient(to right, #ffebee 0%, white 100%);
+    background: linear-gradient(to right, rgba(244, 67, 54, 0.15) 0%, var(--bg-primary) 100%);
+    color: var(--text-primary);
 }
 
 .notification-warning {
     border-left-color: #FF9800;
-    background: linear-gradient(to right, #fff3e0 0%, white 100%);
+    background: linear-gradient(to right, rgba(255, 152, 0, 0.15) 0%, var(--bg-primary) 100%);
+    color: var(--text-primary);
 }
 
 .notification-info {
     border-left-color: #007bff;
-    background: linear-gradient(to right, #e3f2fd 0%, white 100%);
+    background: linear-gradient(to right, rgba(0, 123, 255, 0.15) 0%, var(--bg-primary) 100%);
+    color: var(--text-primary);
 }
 
 /* Анимация спиннера для загрузки */
