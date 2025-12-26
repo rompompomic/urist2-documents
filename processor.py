@@ -2234,102 +2234,6 @@ JSON:
         return ""
 
     @staticmethod
-    def validate_inn(inn: str) -> bool:
-        """Проверяет корректность ИНН по контрольной сумме.
-        
-        Args:
-            inn: ИНН (10 или 12 цифр)
-            
-        Returns:
-            True если ИНН корректный, False если нет
-        """
-        if not inn or not inn.isdigit():
-            return False
-        
-        if len(inn) == 10:
-            # ИНН юридического лица (10 цифр)
-            coefficients = [2, 4, 10, 3, 5, 9, 4, 6, 8]
-            checksum = sum(int(inn[i]) * coefficients[i] for i in range(9)) % 11 % 10
-            return checksum == int(inn[9])
-        
-        elif len(inn) == 12:
-            # ИНН физического лица (12 цифр)
-            # Проверка 11-й цифры
-            coefficients1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
-            checksum1 = sum(int(inn[i]) * coefficients1[i] for i in range(10)) % 11 % 10
-            
-            # Проверка 12-й цифры
-            coefficients2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
-            checksum2 = sum(int(inn[i]) * coefficients2[i] for i in range(11)) % 11 % 10
-            
-            return checksum1 == int(inn[10]) and checksum2 == int(inn[11])
-        
-        return False
-    
-    @staticmethod
-    def normalize_company_name_for_comparison(name: str) -> str:
-        """Нормализует название компании для сравнения.
-        
-        Args:
-            name: Название компании
-            
-        Returns:
-            Нормализованное название (только буквы, нижний регистр)
-        """
-        if not name:
-            return ""
-        
-        # Убираем ОПФ, кавычки, знаки препинания
-        name = name.upper()
-        for opf in ["ПАО", "АО", "ООО", "ОАО", "МФК", "МКК", "МФО", "МИКРОКРЕДИТНАЯ", "МИКРОФИНАНСОВАЯ"]:
-            name = name.replace(opf, " ")
-        
-        # Убираем все кроме букв и пробелов
-        name = re.sub(r'[^А-ЯЁA-Z\s]', ' ', name)
-        # Убираем множественные пробелы
-        name = re.sub(r'\s+', ' ', name).strip()
-        
-        return name.lower()
-    
-    @staticmethod
-    def check_company_name_match(search_name: str, found_name: str, threshold: float = 0.6) -> bool:
-        """Проверяет совпадение названий компаний.
-        
-        Args:
-            search_name: Искомое название
-            found_name: Найденное название
-            threshold: Порог совпадения (0.0-1.0)
-            
-        Returns:
-            True если названия достаточно похожи
-        """
-        search = DocumentProcessor.normalize_company_name_for_comparison(search_name)
-        found = DocumentProcessor.normalize_company_name_for_comparison(found_name)
-        
-        if not search or not found:
-            return False
-        
-        # Точное совпадение
-        if search == found:
-            return True
-        
-        # Проверка вхождения
-        if search in found or found in search:
-            return True
-        
-        # Подсчет совпадающих слов
-        search_words = set(search.split())
-        found_words = set(found.split())
-        
-        if not search_words or not found_words:
-            return False
-        
-        common = search_words & found_words
-        similarity = len(common) / max(len(search_words), len(found_words))
-        
-        return similarity >= threshold
-
-    @staticmethod
     def parse_inn_and_address_from_rusprofile(company_name: str) -> tuple[Optional[str], Optional[str]]:
         """Парсит ИНН и адрес организации с RusProfile.ru
         
@@ -2393,10 +2297,6 @@ JSON:
             # 2️⃣ СПОСОБ 1: Пробуем взять из списка (первый результат)
             item = soup.select_one("div.list-element")
             if item:
-                # Название компании из списка
-                company_name_tag = item.select_one("a.list-element__title")
-                found_company_name = company_name_tag.get_text(strip=True) if company_name_tag else ""
-                
                 # ИНН из списка
                 for span in item.select("div.list-element__row-info span"):
                     m = re.search(r"ИНН[:\s]+(\d{10}|\d{12})", span.get_text())
@@ -2409,21 +2309,8 @@ JSON:
                 if address_tag:
                     address = address_tag.get_text(strip=True)
                 
-                # ВАЛИДАЦИЯ: проверяем ИНН и название
-                if inn:
-                    # 1. Проверка контрольной суммы ИНН
-                    if not DocumentProcessor.validate_inn(inn):
-                        print(f"[RUSPROFILE] ⚠️ ИНН {inn} не прошел проверку контрольной суммы для '{company_name}'")
-                        inn = None
-                    
-                    # 2. Проверка совпадения названия компании
-                    elif found_company_name and not DocumentProcessor.check_company_name_match(company_name, found_company_name):
-                        print(f"[RUSPROFILE] ⚠️ Название не совпадает: искали '{company_name}', нашли '{found_company_name}'")
-                        inn = None
-                        address = None
-                
                 if inn or address:
-                    print(f"[RUSPROFILE] ✅ Найдено из списка для '{company_name}': ИНН={inn}, адрес={address}")
+                    print(f"[RUSPROFILE] Найдено из списка для '{company_name}': ИНН={inn}, адрес={address}")
                     return inn, address
             
             # 3️⃣ СПОСОБ 2: Идём в карточку компании
@@ -2449,10 +2336,6 @@ JSON:
                 card_html = card_response.text
                 card_soup = BeautifulSoup(card_html, "lxml")
                 
-                # Название компании из карточки
-                company_title = card_soup.select_one("h1.company-name")
-                found_company_name = company_title.get_text(strip=True) if company_title else ""
-                
                 # ИНН с карточки
                 inn_tag = card_soup.select_one('[id^="clip_inn"]')
                 if inn_tag:
@@ -2471,28 +2354,12 @@ JSON:
                 if address_tag:
                     address = address_tag.get_text(" ", strip=True)
                 
-                # ВАЛИДАЦИЯ: проверяем ИНН и название
-                if inn:
-                    # 1. Проверка контрольной суммы ИНН
-                    if not DocumentProcessor.validate_inn(inn):
-                        print(f"[RUSPROFILE] ⚠️ ИНН {inn} не прошел проверку контрольной суммы для '{company_name}'")
-                        inn = None
-                    
-                    # 2. Проверка совпадения названия компании
-                    elif found_company_name and not DocumentProcessor.check_company_name_match(company_name, found_company_name):
-                        print(f"[RUSPROFILE] ⚠️ Название не совпадает: искали '{company_name}', нашли '{found_company_name}'")
-                        inn = None
-                        address = None
-                
                 if inn or address:
-                    print(f"[RUSPROFILE] ✅ Найдено из карточки для '{company_name}': ИНН={inn}, адрес={address}")
+                    print(f"[RUSPROFILE] Найдено из карточки для '{company_name}': ИНН={inn}, адрес={address}")
                     return inn, address
             
             # 4️⃣ СПОСОБ 3: Прямой редирект / карточка
             # Пробуем парсить как карточку
-            company_title = soup.select_one("h1.company-name")
-            found_company_name = company_title.get_text(strip=True) if company_title else ""
-            
             inn_tag = soup.select_one('[id^="clip_inn"]')
             if inn_tag:
                 text = inn_tag.get_text(strip=True)
@@ -2508,20 +2375,8 @@ JSON:
             if address_tag:
                 address = address_tag.get_text(" ", strip=True)
             
-            # ВАЛИДАЦИЯ: проверяем ИНН и название
-            if inn:
-                # 1. Проверка контрольной суммы ИНН
-                if not DocumentProcessor.validate_inn(inn):
-                    print(f"[RUSPROFILE] ⚠️ ИНН {inn} не прошел проверку контрольной суммы для '{company_name}'")
-                    return None, None
-                
-                # 2. Проверка совпадения названия компании
-                if found_company_name and not DocumentProcessor.check_company_name_match(company_name, found_company_name):
-                    print(f"[RUSPROFILE] ⚠️ Название не совпадает: искали '{company_name}', нашли '{found_company_name}'")
-                    return None, None
-            
             if inn or address:
-                print(f"[RUSPROFILE] ✅ Найдено (прямой редирект) для '{company_name}': ИНН={inn}, адрес={address}")
+                print(f"[RUSPROFILE] Найдено (прямой редирект) для '{company_name}': ИНН={inn}, адрес={address}")
             
             return inn, address
             
@@ -6196,6 +6051,7 @@ JSON формат:
             "его_её": pronoun_accusative,  # "его" или "её" (винительный)
             "него_неё": pronoun_genitive,  # "него" или "неё" (родительный)
             "ему_ей": pronoun_dative,  # "ему" или "ей" (дательный)
+            "обратился_ась": "обратился" if gender == "м" else "обратилась",  # глагол прошедшего времени
             "Адрес_регистрации": адрес_прописки,
             # Дата рождения: приоритет паспорт > ОКБ
             "Дата_рождения": (passport.get("Дата_рождения", "") if passport else "") or (credit_history.get("Дата_рождения", "") if credit_history else ""),
