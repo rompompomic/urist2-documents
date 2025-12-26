@@ -18,7 +18,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from processor import DocumentProcessor
-from scheduler_updater import get_updater
 
 app = Flask(__name__)
 
@@ -896,42 +895,6 @@ def regenerate_documents(debtor_id):
         except:
             pass
 
-@app.route('/api/registry/status', methods=['GET'])
-def get_registry_status():
-    """Получить статус реестров банков и МФО, информацию об обновлениях"""
-    updater = get_updater()
-    info = updater.get_last_update_info()
-    
-    # Добавляем количество банков и МФО в текущих реестрах
-    from processor import DocumentProcessor
-    info['bank_registry_size'] = len(DocumentProcessor.BANK_REGISTRY)
-    info['mfo_registry_size'] = len(DocumentProcessor.MFO_REGISTRY)
-    info['registry_size'] = len(DocumentProcessor.BANK_REGISTRY) + len(DocumentProcessor.MFO_REGISTRY)
-    
-    return jsonify(info)
-
-@app.route('/api/registry/update', methods=['POST'])
-def force_registry_update():
-    """Принудительно запустить обновление реестра"""
-    updater = get_updater()
-    
-    # Запускаем обновление в отдельном потоке, чтобы не блокировать API
-    def run_update():
-        success = updater.force_update()
-        if success:
-            # После успешного обновления перезагружаем реестры во всех воркерах
-            # Создаём файл-триггер для reload
-            from processor import DocumentProcessor
-            DocumentProcessor.initialize_bank_registry()
-    
-    update_thread = threading.Thread(target=run_update, daemon=True)
-    update_thread.start()
-    
-    return jsonify({
-        'message': 'Обновление запущено',
-        'status': 'started'
-    })
-
 @app.route('/api/upload', methods=['POST'])
 def upload_documents():
     if 'files[]' not in request.files:
@@ -1213,38 +1176,8 @@ def custom_secure_filename(filename):
 if __name__ == '__main__':
     init_db()
     
-    # Инициализируем BANK_REGISTRY с базовыми данными
     print("\n" + "=" * 80)
-    print("🔄 ИНИЦИАЛИЗАЦИЯ РЕЕСТРОВ БАНКОВ И МФО")
-    print("=" * 80)
-    
-    DocumentProcessor.initialize_bank_registry()
-    print(f"✅ BANK_REGISTRY инициализирован: {len(DocumentProcessor.BANK_REGISTRY)} банков")
-    
-    # Получаем планировщик
-    updater = get_updater()
-    
-    # Пытаемся загрузить сохранённые реестры
-    loaded_banks, loaded_mfo = updater.load_registries()
-    if loaded_banks > 0 or loaded_mfo > 0:
-        print(f"✅ Загружены сохранённые реестры: {loaded_banks} банков, {loaded_mfo} МФО")
-    else:
-        print("⚠️  Сохранённых реестров не найдено, будет выполнена загрузка при обновлении")
-    
-    # Запускаем планировщик обновления реестров
-    updater.start_scheduler()
-    
-    # Показываем статус последнего обновления
-    last_info = updater.get_last_update_info()
-    print(f"\n📊 Статус реестров:")
-    print(f"   Последнее обновление: {last_info.get('last_update', 'Никогда')}")
-    print(f"   Следующее обновление: {last_info.get('next_update', 'Запланировано на 3:00')}")
-    print(f"   Банков в справочнике ЦБ: {last_info.get('banks_count', 0)}")
-    print(f"   МФО в справочнике ЦБ: {last_info.get('mfo_count', 0)}")
-    print(f"   Обновлено адресов банков: {last_info.get('banks_updated_count', 0)}")
-    print(f"   Всего в реестрах (BANK + MFO): {last_info.get('registry_size', len(DocumentProcessor.BANK_REGISTRY))}")
-    print(f"   Статус: {last_info.get('status', 'unknown')}")
-    print("\n✅ Планировщик запущен. Обновление каждый день в 3:00")
+    print("✅ ИНН и адреса будут получаться через RusProfile")
     print("=" * 80 + "\n")
     
     # Получаем настройки из переменных окружения

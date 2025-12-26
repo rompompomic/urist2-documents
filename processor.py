@@ -58,42 +58,6 @@ class DocumentProcessor:
     def __init__(self) -> None:
         pass
 
-    # Registries populated at startup by app.py or scheduler
-    BANK_REGISTRY: Dict[str, Any] = {}
-    MFO_REGISTRY: Dict[str, Any] = {}
-
-    @classmethod
-    def initialize_bank_registry(cls) -> None:
-        """Load bank and MFO registries from disk into class attributes.
-
-        This method is called from `app.py` at startup. It is safe to call
-        multiple times; missing files will result in empty registries.
-        """
-        bank_file = Path("cbr_data") / "bank_registry.json"
-        mfo_file = Path("cbr_data") / "mfo_registry.json"
-
-        if bank_file.exists():
-            try:
-                with open(bank_file, "r", encoding="utf-8") as f:
-                    cls.BANK_REGISTRY = json.load(f)
-            except Exception as e:
-                print(f"[WARN] Failed to load bank registry: {e}")
-                cls.BANK_REGISTRY = {}
-        else:
-            cls.BANK_REGISTRY = {}
-
-        if mfo_file.exists():
-            try:
-                with open(mfo_file, "r", encoding="utf-8") as f:
-                    cls.MFO_REGISTRY = json.load(f)
-            except Exception as e:
-                print(f"[WARN] Failed to load MFO registry: {e}")
-                cls.MFO_REGISTRY = {}
-        else:
-            cls.MFO_REGISTRY = {}
-
-        print(f"Initialized BANK_REGISTRY: {len(cls.BANK_REGISTRY)} banks, MFO_REGISTRY: {len(cls.MFO_REGISTRY)} MFOs")
-
     # === Prompt configuration ===
     DOCUMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "паспорт": {
@@ -633,7 +597,7 @@ JSON:
 АЛГОРИТМ ПРОВЕРКИ:
 1. Найди кадастровый номер → если есть → имущество ЕСТЬ
 2. Нет кадастрового номера → ищи фразу "отсутствуют сведения" → имущества НЕТ
-3. При любых сомнениях: есть кадастровый номер = имущество ЕСТЬ
+3. Если в строке "дата государственной регистрации прекращения права: данные отсутствуют" — значит право действует, имущество ЕСТЬ
 
 ВАЖНО: Показывай только АКТУАЛЬНЫХ правообладателей!
 - Если в разделе "Правообладатели" есть отметки "Право прекращено", "Собственность прекращена" — НЕ включай их.
@@ -2214,49 +2178,7 @@ JSON:
         is_mfo = any(marker in name_upper for marker in ["МКК", "МФК", "МФО", "МИКРОКРЕДИТНАЯ", "МИКРОФИНАНСОВАЯ"])
         is_bank = any(marker in name_upper for marker in ["БАНК", "ПАО", "АО"])
         
-        # Функция поиска в реестре
-        def search_in_registry(registry, keywords):
-            if not registry or not keywords:
-                return None
-            for key, data in registry.items():
-                name_lower = data.get("название", "").lower()
-                matches = sum(1 for kw in keywords if kw in name_lower)
-                if matches >= len(keywords) * 0.7:  # 70% порог
-                    address = data.get("адрес", "")
-                    if address:
-                        return address
-            return None
-        
-        # Приоритет 1: Если это МФО/МКК - сначала ищем в MFO_REGISTRY
-        if is_mfo and not is_bank:
-            address = search_in_registry(DocumentProcessor.MFO_REGISTRY, keywords)
-            if address:
-                return address
-            # Если не нашли - пробуем в BANK_REGISTRY
-            address = search_in_registry(DocumentProcessor.BANK_REGISTRY, keywords)
-            if address:
-                return address
-        
-        # Приоритет 2: Если это банк - сначала ищем в BANK_REGISTRY
-        elif is_bank:
-            address = search_in_registry(DocumentProcessor.BANK_REGISTRY, keywords)
-            if address:
-                return address
-            # Если не нашли - пробуем в MFO_REGISTRY
-            address = search_in_registry(DocumentProcessor.MFO_REGISTRY, keywords)
-            if address:
-                return address
-        
-        # Приоритет 3: Если тип неизвестен - ищем в обоих реестрах
-        else:
-            address = search_in_registry(DocumentProcessor.MFO_REGISTRY, keywords)
-            if address:
-                return address
-            address = search_in_registry(DocumentProcessor.BANK_REGISTRY, keywords)
-            if address:
-                return address
-        
-        # 3. FALLBACK: словарь адресов банков и МФО (данные на 03.11.2025)
+        # 1. FALLBACK: словарь адресов банков и МФО (данные на 03.11.2025)
         BANK_ADDRESSES = {
             # Крупнейшие банки
         }
@@ -2479,58 +2401,7 @@ JSON:
         is_mfo = any(marker in name_upper for marker in ["МКК", "МФК", "МФО", "МИКРОКРЕДИТНАЯ", "МИКРОФИНАНСОВАЯ"])
         is_bank = any(marker in name_upper for marker in ["БАНК", "ПАО", "АО"])
         
-        # Функция поиска ИНН в реестре МФО (ключ = ИНН)
-        def search_inn_in_mfo(keywords):
-            if not DocumentProcessor.MFO_REGISTRY or not keywords:
-                return None
-            for inn, mfo_data in DocumentProcessor.MFO_REGISTRY.items():
-                mfo_name_lower = mfo_data.get("название", "").lower()
-                matches = sum(1 for kw in keywords if kw in mfo_name_lower)
-                if matches >= len(keywords) * 0.7:  # 70% порог
-                    return inn  # Ключ словаря - это ИНН!
-            return None
-        
-        # Функция поиска ИНН в реестре банков (поле "инн")
-        def search_inn_in_bank(keywords):
-            if not DocumentProcessor.BANK_REGISTRY or not keywords:
-                return None
-            for ogrn, bank_data in DocumentProcessor.BANK_REGISTRY.items():
-                bank_name_lower = bank_data.get("название", "").lower()
-                matches = sum(1 for kw in keywords if kw in bank_name_lower)
-                if matches >= len(keywords) * 0.7:  # 70% порог
-                    inn = bank_data.get("инн", "")
-                    if inn:
-                        return inn
-            return None
-        
-        # Приоритет 1: Если это МФО/МКК - сначала ищем в MFO_REGISTRY
-        if is_mfo and not is_bank:
-            inn = search_inn_in_mfo(keywords)
-            if inn:
-                return inn
-            inn = search_inn_in_bank(keywords)
-            if inn:
-                return inn
-        
-        # Приоритет 2: Если это банк - сначала ищем в BANK_REGISTRY
-        elif is_bank:
-            inn = search_inn_in_bank(keywords)
-            if inn:
-                return inn
-            inn = search_inn_in_mfo(keywords)
-            if inn:
-                return inn
-        
-        # Приоритет 3: Если тип неизвестен - ищем в обоих реестрах
-        else:
-            inn = search_inn_in_mfo(keywords)
-            if inn:
-                return inn
-            inn = search_inn_in_bank(keywords)
-            if inn:
-                return inn
-        
-        # 2. FALLBACK: словарь ИНН банков (данные на 03.11.2025)
+        # 1. FALLBACK: словарь ИНН банков (данные на 03.11.2025)
         BANK_INN = {
         }
 
@@ -2562,8 +2433,8 @@ JSON:
             elif key in search_name or search_name in key:
                 return inn
 
-        # 3. FALLBACK: Парсим ИНН с RusProfile если не нашли в реестрах
-        print(f"[INN_PARSER] ИНН не найден в реестрах для '{bank_name}', пробую RusProfile...")
+        # 2. FALLBACK: Парсим ИНН с RusProfile если не нашли в словаре
+        print(f"[INN_PARSER] ИНН не найден в словаре для '{bank_name}', пробую RusProfile...")
         inn_from_rusprofile = DocumentProcessor.parse_inn_from_rusprofile(bank_name)
         if inn_from_rusprofile:
             return inn_from_rusprofile
@@ -7547,13 +7418,13 @@ JSON (СТРОГО этот формат):
                                         debt = credit.get("Сумма", "???")
                                         inn = credit.get("ИНН_кредитора", "")
                                         
-                                        # Если ИНН нет - пробуем получить из реестра
+                                        # Если ИНН нет - пробуем получить из словаря или RusProfile
                                         if not inn and creditor != "???":
                                             _, canonical_name = DocumentProcessor.normalize_bank_name(creditor)
                                             inn = DocumentProcessor.get_bank_inn(canonical_name)
                                             if inn:
                                                 credit["ИНН_кредитора"] = inn
-                                                print(f"        {idx}. {creditor} | Дата: {date} | Начальная: {initial} | Долг: {debt} | ИНН: {inn} (из реестра)")
+                                                print(f"        {idx}. {creditor} | Дата: {date} | Начальная: {initial} | Долг: {debt} | ИНН: {inn} (получен)")
                                             else:
                                                 print(f"        {idx}. {creditor} | Дата: {date} | Начальная: {initial} | Долг: {debt}")
                                         else:
