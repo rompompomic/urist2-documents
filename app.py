@@ -443,7 +443,8 @@ def index():
 
 @app.route('/favicon.ico')
 def favicon():
-    return send_file('static/favicon.ico', mimetype='image/x-icon')
+    favicon_path = Path(__file__).parent / 'static' / 'favicon.ico'
+    return send_file(favicon_path, mimetype='image/x-icon')
 
 @app.route('/api/debtors', methods=['GET'])
 def get_debtors():
