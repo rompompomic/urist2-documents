@@ -2860,6 +2860,66 @@ JSON:
         return (normalized, canonical)
 
     @staticmethod
+    def normalize_creditor_names_with_gpt(creditors: List[str]) -> Dict[str, str]:
+        """Нормализует названия кредиторов через GPT для исправления опечаток.
+        
+        Args:
+            creditors: Список названий кредиторов для нормализации
+            
+        Returns:
+            Словарь {оригинальное_название: нормализованное_название}
+        """
+        if not creditors:
+            return {}
+        
+        prompt = f"""Ты - эксперт по нормализации названий российских банков и МФО.
+
+Исправь опечатки и приведи названия к правильному формату:
+- ПАО/АО/ООО в начале
+- Название банка/МФО в кавычках-ёлочках «»
+- Правильные заглавные буквы
+- Опечатки или ошибки в написании, пример ""Эквазайм" → "Эквазим" или "Денежная Крепасть" → "Денежная Крепость"
+
+Примеры:
+"Общество С Ограниченной Ответственностью МКК Денежная Крепость" → "ООО МКК «Денежная Крепость»"
+"ооо мкк эквазаим" → "ООО МКК «Эквазайм»"
+"ПАО СБЕРБАНК" → "ПАО «Сбербанк»"
+"АО АЛЬФА-БАНК" → "АО «Альфа-Банк»"
+
+Названия для нормализации:
+{chr(10).join(f"{i+1}. {name}" for i, name in enumerate(creditors))}
+
+Верни ТОЛЬКО JSON в формате:
+{{
+  "Название 1": "Нормализованное название 1",
+  "Название 2": "Нормализованное название 2"
+}}"""
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=5000
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            
+            # Убираем markdown-разметку если есть
+            if result_text.startswith("```"):
+                result_text = result_text.split("```")[1]
+                if result_text.startswith("json"):
+                    result_text = result_text[4:]
+                result_text = result_text.strip()
+            
+            normalized = json.loads(result_text)
+            print(f"[GPT_NORMALIZE] Нормализовано {len(normalized)} названий кредиторов")
+            return normalized
+        except Exception as e:
+            print(f"[GPT_NORMALIZE] Ошибка нормализации через GPT: {e}")
+            return {}
+
+    @staticmethod
     def select_first_entry(cache: Dict[str, List[Dict[str, Any]]], key: str) -> Dict[str, Any]:
         for item in cache.get(key, []):
             if isinstance(item, dict):
@@ -5945,6 +6005,37 @@ JSON формат:
         # Если адрес не в паспорте, проверяем в ОКБ/НБКИ
         if not адрес_прописки and credit_history:
             адрес_прописки = credit_history.get("Адрес_регистрации", "") or ""
+
+        # === НОРМАЛИЗАЦИЯ НАЗВАНИЙ КРЕДИТОРОВ ЧЕРЕЗ GPT ===
+        # Собираем все уникальные названия кредиторов
+        creditor_names = set()
+        for source in ["отчет_окб", "отчет_нбки", "постановление_пристава"]:
+            for doc in data_map.get(source, []):
+                if isinstance(doc, dict):
+                    creditor = doc.get("Кредитор") or doc.get("Наименование_кредитора") or doc.get("Взыскатель") or ""
+                    if creditor:
+                        creditor_names.add(creditor)
+        
+        # Нормализуем через GPT
+        gpt_normalized = {}
+        if creditor_names:
+            gpt_normalized = DocumentProcessor.normalize_creditor_names_with_gpt(list(creditor_names))
+            
+            # Применяем нормализацию к исходным данным
+            if gpt_normalized:
+                for source in ["отчет_окб", "отчет_нбки", "постановление_пристава"]:
+                    for doc in data_map.get(source, []):
+                        if isinstance(doc, dict):
+                            original = doc.get("Кредитор") or doc.get("Наименование_кредитора") or doc.get("Взыскатель") or ""
+                            if original and original in gpt_normalized:
+                                normalized = gpt_normalized[original]
+                                # Обновляем название в документе
+                                if "Кредитор" in doc:
+                                    doc["Кредитор"] = normalized
+                                if "Наименование_кредитора" in doc:
+                                    doc["Наименование_кредитора"] = normalized
+                                if "Взыскатель" in doc:
+                                    doc["Взыскатель"] = normalized
 
         # Таблица кредиторов (передаем ФИО, ИНН, СНИЛС, адрес)
         # ВАЖНО: формируем таблицу ПЕРЕД расчетом общей суммы долга
