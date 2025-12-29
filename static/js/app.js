@@ -192,12 +192,12 @@ dropZone.addEventListener('drop', (e) => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
     
-    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.pdf'));
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
     addFilesWithValidation(files);
 });
 
 fileInput.addEventListener('change', (e) => {
-    const files = Array.from(e.target.files).filter(f => f.name.endsWith('.pdf'));
+    const files = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
     addFilesWithValidation(files);
 });
 
