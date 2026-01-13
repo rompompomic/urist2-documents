@@ -10,8 +10,8 @@ services:
     env_file:
       - .env
     # Ограничения ресурсов
-    mem_limit: 4g
-    mem_reservation: 2g
+    mem_limit: 7g
+    mem_reservation: 4g
     cpus: 2
     volumes:
       # Сохраняем данные между перезапусками
