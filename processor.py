@@ -7519,7 +7519,9 @@ JSON формат:
                 BATCH_SIZE = 30  # БКИ: маленькие батчи (самые большие отчеты!)
                 OVERLAP_PAGES = 10  # БКИ: overlap 10 страниц
             
+            print(f"      [DEBUG] page_images count: {len(page_images)}, BATCH_SIZE: {BATCH_SIZE}")
             use_batch = len(page_images) > BATCH_SIZE
+            print(f"      [DEBUG] use_batch: {use_batch}")
             batch_size = BATCH_SIZE  # Может уменьшаться при ошибках
 
             extracted_data = {}
@@ -7988,6 +7990,7 @@ JSON (СТРОГО этот формат):
                 
             else:
                 # Для небольших документов - обычная обработка
+                print(f"      [DEBUG] Используется ОБЫЧНАЯ обработка (не батч), страниц: {len(page_images)}")
                 if doc_type == "отчет_окб":
                     simple_prompt = base_prompt + f"""
 
