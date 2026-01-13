@@ -4540,10 +4540,17 @@ JSON:
                 адрес = адрес_из_документа or адрес_из_реестра
 
             # ИНН кредитора
+            print(f"[DEBUG_INN] Кредитор: {кредитор_display}")
+            print(f"[DEBUG_INN] ИНН из первого кредита: {первый_кредит.get('ИНН_кредитора')}")
+            
             инн_display = первый_кредит.get("ИНН_кредитора") or DocumentProcessor.get_bank_inn(кредитор_display)
+            
+            print(f"[DEBUG_INN] ИНН после get_bank_inn: {инн_display}")
+            
             # Добавляем префикс "ИНН " если ИНН найден
             if инн_display:
                 инн_display = f"ИНН {инн_display}"
+                print(f"[DEBUG_INN] ИНН с префиксом: {инн_display}")
 
             # Создаем отдельную строку для каждого договора
             for contract_idx, credit in enumerate(credits_list):
