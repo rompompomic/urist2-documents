@@ -6461,6 +6461,15 @@ JSON формат:
 
     @staticmethod
     def prepare_template_context(data_map: Dict[str, List[Dict[str, Any]]], pdf_paths: Optional[List[Path]] = None, openai_client=None) -> Dict[str, str]:
+        # DEBUG: Показываем что пришло в prepare_template_context
+        print(f"[DEBUG prepare_template_context] data_map keys: {list(data_map.keys())}")
+        for key in ["отчет_окб", "отчет_бки", "отчет_нбки"]:
+            if key in data_map:
+                print(f"[DEBUG] {key}: {len(data_map[key])} отчетов")
+                for idx, report in enumerate(data_map[key]):
+                    report_keys = list(report.keys()) if isinstance(report, dict) else "NOT A DICT"
+                    print(f"  [DEBUG] Отчет {idx+1} ключи: {report_keys}")
+        
         passport = DocumentProcessor.select_first_entry(data_map, "паспорт")
         inn = DocumentProcessor.select_first_entry(data_map, "инн")
         snils = DocumentProcessor.select_first_entry(data_map, "снилс")
@@ -8612,6 +8621,11 @@ JSON (СТРОГО этот формат):
                 else:
                     # Обычная обработка для всех остальных документов
                     aggregated.setdefault(result.document_type, []).append(result.data)
+                    
+                    # DEBUG: Логируем добавление кредитных отчетов в aggregated
+                    if result.document_type in ["отчет_окб", "отчет_бки", "отчет_нбки"]:
+                        current_count = len(aggregated.get(result.document_type, []))
+                        print(f"      [DEBUG] Добавлен {result.document_type} в aggregated (всего отчетов типа {result.document_type}: {current_count})")
                 
                 # Извлекаем ФИО должника из паспорта для использования в других документах
                 if result.document_type == "паспорт" and "ФИО" in result.data:
