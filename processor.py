@@ -4099,15 +4099,18 @@ JSON:
                     try:
                         dob = datetime.strptime(dob_str, "%d.%m.%Y").date()
                         age_years = (today - dob).days / 365.25
+                        print(f"[CHILDREN] Ребенок из паспорта: ДР={dob_str}, возраст={age_years:.1f} лет")
                         if age_years < 18:
                             has_minors = True
-                            break
-                    except ValueError:
+                            print(f"[CHILDREN] Найден несовершеннолетний ребенок (возраст {age_years:.1f} лет)")
+                    except ValueError as e:
+                        print(f"[CHILDREN] Ошибка парсинга даты '{dob_str}': {e}")
                         continue
 
         # ДОПОЛНИТЕЛЬНО: Проверяем свидетельства о рождении детей
         if data_map:
             birth_certificates = data_map.get("свидетельство_о_рождении", [])
+            print(f"[CHILDREN] Свидетельств о рождении: {len(birth_certificates)}")
             if birth_certificates:
                 today = date.today()
                 for cert in birth_certificates:
@@ -4118,11 +4121,15 @@ JSON:
                         try:
                             dob = datetime.strptime(dob_str, "%d.%m.%Y").date()
                             age_years = (today - dob).days / 365.25
+                            print(f"[CHILDREN] Ребенок из свидетельства: ДР={dob_str}, возраст={age_years:.1f} лет")
                             if age_years < 18:
                                 has_minors = True
-                                break
-                        except ValueError:
+                                print(f"[CHILDREN] Найден несовершеннолетний ребенок из свидетельства (возраст {age_years:.1f} лет)")
+                        except ValueError as e:
+                            print(f"[CHILDREN] Ошибка парсинга даты из свидетельства '{dob_str}': {e}")
                             continue
+        
+        print(f"[CHILDREN] Итого: has_minors={has_minors}, из паспорта={passport_children_count} детей")
 
         # Проверяем свидетельство о браке
         has_marriage = False
@@ -7482,16 +7489,16 @@ JSON формат:
 
             # Определяем batch size и overlap в зависимости от типа отчета
             if doc_type == "отчет_нбки":
-                BATCH_SIZE = 50  # НБКИ: большие батчи
+                BATCH_SIZE = 40  # НБКИ: средние батчи (уменьшено для памяти)
                 OVERLAP_PAGES = 10  # НБКИ: overlap 10 страниц
             elif doc_type == "отчет_окб":
-                BATCH_SIZE = 50  # ОКБ: большие батчи
+                BATCH_SIZE = 40  # ОКБ: средние батчи (уменьшено для памяти)
                 OVERLAP_PAGES = 20  # ОКБ: overlap 20 страниц
             elif doc_type == "постановление_пристава":
                 BATCH_SIZE = 50  # Постановления: большие батчи
                 OVERLAP_PAGES = 5  # Постановления: overlap 5 страниц
             else:  # БКИ
-                BATCH_SIZE = 50
+                BATCH_SIZE = 30  # БКИ: маленькие батчи (самые большие отчеты!)
                 OVERLAP_PAGES = 10  # БКИ: overlap 10 страниц
             
             use_batch = len(pages) > BATCH_SIZE
@@ -7936,13 +7943,20 @@ JSON (СТРОГО этот формат):
                     
                     # 🚀 ОПТИМИЗАЦИЯ ПАМЯТИ: Очищаем батч после обработки
                     finally:
+                        # Удаляем временные файлы изображений батча
+                        for img_path in batch_pages:
+                            try:
+                                if os.path.exists(img_path):
+                                    os.unlink(img_path)
+                            except Exception as e:
+                                print(f"[CLEANUP] Не удалось удалить {img_path}: {e}")
+                        
                         # Удаляем ссылки на изображения батча
                         batch_pages = None
-                        # Запускаем сборку мусора каждые 3 батча
-                        if batch_num % 3 == 0:
-                            import gc
-                            gc.collect()
-                            DocumentProcessor.log_memory(f"После батча {batch_num}")
+                        # Запускаем сборку мусора после каждого батча для экономии памяти
+                        import gc
+                        gc.collect()
+                        DocumentProcessor.log_memory(f"После батча {batch_num}")
                 
                 # Объединяем результаты всех батчей
                 if doc_type == "постановление_пристава":
