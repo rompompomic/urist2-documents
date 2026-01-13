@@ -8276,11 +8276,13 @@ JSON (СТРОГО этот формат):
             DocumentProcessor.log_memory("После финальной очистки (кредитные отчеты)")
 
             elapsed = time.time() - start_time
+            
+            print(f"      [DEBUG] Возврат DocumentOutput: pages={total_pages}, error={error}, data keys={list(extracted_data.keys()) if extracted_data else 'None'}")
 
             return DocumentOutput(
                 file=pdf_path.name,
                 document_type=doc_type,
-                pages=len(pages),
+                pages=total_pages,
                 processing_time_seconds=round(elapsed, 2),
                 data=extracted_data,
                 error=error,
@@ -8598,6 +8600,12 @@ JSON (СТРОГО этот формат):
             file_elapsed = time_module.time() - file_start_time
             print(f"[TIMING] File {pdf.name} completed in {file_elapsed:.1f}s")
             results.append(result)
+            
+            # DEBUG: Проверяем почему данные не добавляются в aggregated
+            print(f"      [DEBUG] result.error: {result.error}")
+            print(f"      [DEBUG] isinstance(result.data, dict): {isinstance(result.data, dict)}")
+            print(f"      [DEBUG] 'raw_output' in result.data: {'raw_output' in result.data if isinstance(result.data, dict) else 'N/A'}")
+            
             if not result.error and isinstance(result.data, dict) and "raw_output" not in result.data:
                 # DEBUG: Показываем ключи в result.data для кредитных отчетов
                 if result.document_type in ["отчет_окб", "отчет_бки", "отчет_нбки"]:
