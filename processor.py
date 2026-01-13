@@ -2132,6 +2132,20 @@ JSON:
                     if keyword in filename_lower:
                         return doc_type, config["prompt"]
         
+        # ПРИОРИТЕТ 1.5: БКИ/НБКИ/ОКБ по имени файла (до проверки остальных документов)
+        # Порядок проверки: НБКИ -> ОКБ -> БКИ (от самого специфичного к общему)
+        if "нбки" in filename_lower or "nbki" in filename_lower or "nbch" in filename_lower:
+            config = DocumentProcessor.DOCUMENT_TYPES.get("отчет_нбки", {})
+            return "отчет_нбки", config.get("prompt", "")
+        
+        if "окб" in filename_lower or "okb" in filename_lower:
+            config = DocumentProcessor.DOCUMENT_TYPES.get("отчет_окб", {})
+            return "отчет_окб", config.get("prompt", "")
+        
+        if "бки" in filename_lower and "нбки" not in filename_lower:  # Избегаем ложных срабатываний на НБКИ
+            config = DocumentProcessor.DOCUMENT_TYPES.get("отчет_бки", {})
+            return "отчет_бки", config.get("prompt", "")
+        
         # ПРИОРИТЕТ 2: Потом проверяем обычные документы ДОЛЖНИКА
         for doc_type, config in DocumentProcessor.DOCUMENT_TYPES.items():
             # Пропускаем документы супруга, они уже проверены
@@ -7439,7 +7453,7 @@ JSON формат:
         if doc_type in ["отчет_окб", "отчет_бки", "отчет_нбки"]:
             print(f"      [CREDIT] Обработка кредитного отчета")
             
-            # Конвертируем в изображения
+            # Конвертируем в изображения ПОСТРАНИЧНОО для экономии памяти
             print(f"      Конвертация PDF в изображения...", end=" ", flush=True)
             pdf = pdfium.PdfDocument(str(pdf_path))
             total_pages = len(pdf)
@@ -7447,45 +7461,41 @@ JSON формат:
             
             # Обрабатываем все страницы для всех кредитных отчетов (батчевая обработка)
             max_pages = total_pages
-                
-            pages = []
-            for i in range(max_pages):
-                page = pdf[i]
-                bitmap = page.render(scale=2.5)
-                pil_image = bitmap.to_pil()
-                pages.append(pil_image)
-            print(f"OK ({len(pages)} из {total_pages} стр.)")
-            DocumentProcessor.log_memory("После конвертации в изображения")
-
-            # Сохраняем страницы
-            print(f"      Сохранение страниц...", end=" ", flush=True)
+            
+            # 🚀 КРИТИЧЕСКАЯ ОПТИМИЗАЦИЯ: Конвертируем и сохраняем батчами по 40 страниц
+            # Вместо загрузки всех страниц в память сразу
+            CONVERSION_BATCH_SIZE = 40
             page_images = []
-            for page in pages:
-                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:
-                    tmp_path = tmp_file.name
-                    page.save(tmp_path, 'JPEG', quality=95, optimize=True)
-                    page_images.append(tmp_path)
-            print("OK")
             
-            # 🚀 ОПТИМИЗАЦИЯ ПАМЯТИ: Закрываем PIL изображения и очищаем список
-            for page in pages:
-                page.close()
-            pages.clear()
+            for batch_start in range(0, max_pages, CONVERSION_BATCH_SIZE):
+                batch_end = min(batch_start + CONVERSION_BATCH_SIZE, max_pages)
+                batch_pages = []
+                
+                # Конвертируем батч страниц
+                for i in range(batch_start, batch_end):
+                    page = pdf[i]
+                    bitmap = page.render(scale=2.5)
+                    pil_image = bitmap.to_pil()
+                    batch_pages.append(pil_image)
+                
+                # Сохраняем батч и закрываем изображения
+                for pil_image in batch_pages:
+                    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:
+                        tmp_path = tmp_file.name
+                        pil_image.save(tmp_path, 'JPEG', quality=95, optimize=True)
+                        page_images.append(tmp_path)
+                    pil_image.close()
+                
+                # Очищаем батч из памяти
+                batch_pages.clear()
+                import gc
+                gc.collect()
+            
+            print(f"OK ({len(page_images)} из {total_pages} стр.)")
             pdf.close()
             import gc
             gc.collect()
-            print(f"      [MEMORY] Освобождена память от {len(page_images)} изображений")
-            print("OK")
-            
-            # 🚀 ОПТИМИЗАЦИЯ ПАМЯТИ: Закрываем PIL изображения и очищаем список
-            for page in pages:
-                page.close()
-            pages.clear()
-            pdf.close()
-            import gc
-            gc.collect()
-            print(f"      [MEMORY] Освобождена память от {len(page_images)} изображений")
-            DocumentProcessor.log_memory("После очистки PIL объектов")
+            DocumentProcessor.log_memory("После конвертации и сохранения изображений")
 
             # Определяем batch size и overlap в зависимости от типа отчета
             if doc_type == "отчет_нбки":
