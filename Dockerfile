@@ -39,5 +39,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000')"
 
 # Запуск через Gunicorn (1 воркер чтобы избежать проблем с синхронизацией реестров в памяти)
-# Увеличенный таймаут для обработки больших документов (15 минут)
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "900", "--graceful-timeout", "900", "--access-logfile", "-", "--error-logfile", "-", "wsgi:app"]
+# Увеличенный таймаут для обработки больших документов (30 минут = 1800 секунд)
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "1800", "--graceful-timeout", "1800", "--access-logfile", "-", "--error-logfile", "-", "wsgi:app"]

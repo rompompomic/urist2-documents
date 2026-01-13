@@ -324,6 +324,7 @@ def processing_worker():
                     continue
                 
                 print(f"[WORKER] Starting job {job_id} for debtor {debtor_id}")
+                job_start_time = time.time()
                 
                 cursor.execute('''
                     UPDATE debtors 
@@ -337,6 +338,9 @@ def processing_worker():
                 # Обрабатываем документы
                 try:
                     process_documents_for_job(debtor_id)
+                    
+                    job_elapsed = time.time() - job_start_time
+                    print(f"[WORKER] Job {job_id} completed in {job_elapsed:.1f}s")
                     
                     # Успешно завершено
                     conn = get_db()
@@ -356,11 +360,12 @@ def processing_worker():
                     conn.commit()
                     conn.close()
                     
-                    print(f"[WORKER] Job {job_id} completed successfully")
+                    # Удалено: дублирующий лог, время уже выведено выше
 
                 except Exception as e:
                     # Ошибка обработки
-                    print(f"[WORKER] Job {job_id} failed: {e}")
+                    job_elapsed = time.time() - job_start_time
+                    print(f"[WORKER] Job {job_id} failed after {job_elapsed:.1f}s: {e}")
                     safe_print_exc()
 
                     try:

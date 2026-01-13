@@ -8545,6 +8545,10 @@ JSON (СТРОГО этот формат):
         debtor_id: Optional[str] = None,
         lawyer: Optional[str] = None,
     ) -> tuple[List[DocumentOutput], Dict[str, List[Dict[str, Any]]], List[Path]]:
+        import time as time_module
+        batch_start_time = time_module.time()
+        print(f"[TIMING] process_batch started")
+        
         results: List[DocumentOutput] = []
         aggregated: Dict[str, List[Dict[str, Any]]] = {}
         pdf_list = list(pdf_paths)  # Конвертируем в список для повторного использования
@@ -8564,7 +8568,9 @@ JSON (СТРОГО этот формат):
         # Переменная для хранения ФИО должника (извлекается из паспорта)
         debtor_fio = ""
 
-        for pdf in sorted_pdf_list:
+        for idx, pdf in enumerate(sorted_pdf_list, 1):
+            file_start_time = time_module.time()
+            print(f"[TIMING] Processing file {idx}/{len(sorted_pdf_list)}: {pdf.name}")
             try:
                 result = self.process_pdf(pdf, debtor_fio=debtor_fio)
             except Exception as exc:  # noqa: BLE001
@@ -8576,6 +8582,8 @@ JSON (СТРОГО этот формат):
                     data={},
                     error=str(exc),
                 )
+            file_elapsed = time_module.time() - file_start_time
+            print(f"[TIMING] File {pdf.name} completed in {file_elapsed:.1f}s")
             results.append(result)
             if not result.error and isinstance(result.data, dict) and "raw_output" not in result.data:
                 # Специальная обработка для постановлений с батчевой обработкой
@@ -8599,10 +8607,24 @@ JSON (СТРОГО этот формат):
                     if debtor_fio:
                         print(f"      [ФИО ДОЛЖНИКА] Извлечено: {debtor_fio}")
 
+        processing_elapsed = time_module.time() - batch_start_time
+        print(f"[TIMING] All files processed in {processing_elapsed:.1f}s")
+        
         # Передаем список файлов для формирования приложений (используем исходный порядок для приложений)
+        context_start_time = time_module.time()
+        print(f"[TIMING] Preparing template context...")
         template_context = self.prepare_template_context(aggregated, pdf_list, client)
+        context_elapsed = time_module.time() - context_start_time
+        print(f"[TIMING] Template context prepared in {context_elapsed:.1f}s")
+        
+        templates_start_time = time_module.time()
+        print(f"[TIMING] Generating documents...")
         filled_templates = self.generate_all_documents(template_context, debtor_id=debtor_id, lawyer=lawyer)
+        templates_elapsed = time_module.time() - templates_start_time
+        print(f"[TIMING] Documents generated in {templates_elapsed:.1f}s")
+        
         if output_json:
+            json_start_time = time_module.time()
             # Сохраняем template_context для последующего редактирования и регенерации
             # Сначала нормализуем маркеры переноса строки в реальные '\n',
             # затем конвертируем RichText объекты в строки для JSON сериализации
@@ -8610,6 +8632,11 @@ JSON (СТРОГО этот формат):
             serializable_context = self._make_json_serializable(normalized_context)
             with open(output_json, "w", encoding="utf-8") as handle:
                 json.dump(serializable_context, handle, ensure_ascii=False, indent=2)
+            json_elapsed = time_module.time() - json_start_time
+            print(f"[TIMING] JSON saved in {json_elapsed:.1f}s")
+        
+        total_elapsed = time_module.time() - batch_start_time
+        print(f"[TIMING] process_batch completed in {total_elapsed:.1f}s")
         return results, aggregated, filled_templates
 
     @staticmethod
