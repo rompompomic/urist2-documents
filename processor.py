@@ -2713,60 +2713,15 @@ JSON:
 
     @staticmethod
     def get_bank_inn(bank_name: str) -> str:
-        """Возвращает ИНН банка/МФО из реестров ЦБ РФ или через RusProfile.
+        """Возвращает ИНН банка/МФО только из RusProfile (если уже в кеше).
 
         Args:
             bank_name: Название банка/МФО (нормализованное или каноническое)
 
         Returns:
-            ИНН из реестра, RusProfile или пустая строка
+            ИНН из RusProfile или пустая строка
         """
-        # СПЕЦИАЛЬНАЯ ОБРАБОТКА для ВТБ
-        if bank_name and "ВТБ" in bank_name.upper():
-            return "7702070139"
-        
-        # Извлекаем ключевые слова для поиска
-        keywords = DocumentProcessor.extract_search_keywords(bank_name)
-        
-        # Определяем тип организации по названию
-        name_upper = bank_name.upper()
-        is_mfo = any(marker in name_upper for marker in ["МКК", "МФК", "МФО", "МИКРОКРЕДИТНАЯ", "МИКРОФИНАНСОВАЯ"])
-        is_bank = any(marker in name_upper for marker in ["БАНК", "ПАО", "АО"])
-        
-        # 1. FALLBACK: словарь ИНН банков (данные на 03.11.2025)
-        BANK_INN = {
-        }
-
-        # Нормализуем название банка для поиска
-        search_name = bank_name.upper().strip()
-
-        # Убираем ОПФ и лишние символы
-        import re
-        for opf in ["ПАО", "АО", "ООО", "ОАО", "МФК", "МКК", "КБ"]:
-            search_name = re.sub(r'\b' + opf + r'\b', ' ', search_name)
-
-        search_name = search_name.replace("«", "").replace("»", "").replace('"', "")
-        search_name = search_name.replace("-", " ")
-        while "  " in search_name:
-            search_name = search_name.replace("  ", " ")
-        search_name = search_name.strip()
-
-        # Ищем точное совпадение
-        if search_name in BANK_INN:
-            return BANK_INN[search_name]
-
-        # Ищем частичное совпадение
-        for key, inn in BANK_INN.items():
-            key_words = set(key.split())
-            search_words = set(search_name.split())
-
-            if key_words.issubset(search_words) or search_words.issubset(key_words):
-                return inn
-            elif key in search_name or search_name in key:
-                return inn
-
-        # 2. FALLBACK: Парсим ИНН с RusProfile если не нашли в словаре
-        print(f"[INN_PARSER] ИНН не найден в словаре для '{bank_name}', пробую RusProfile...")
+        # Парсим ИНН с RusProfile (берем из кеша если уже запрашивали)
         inn_from_rusprofile = DocumentProcessor.parse_inn_from_rusprofile(bank_name)
         if inn_from_rusprofile:
             return inn_from_rusprofile
@@ -4543,9 +4498,16 @@ JSON:
             print(f"[DEBUG_INN] Кредитор: {кредитор_display}")
             print(f"[DEBUG_INN] ИНН из первого кредита: {первый_кредит.get('ИНН_кредитора')}")
             
+            # Получаем ИНН: либо из документа, либо из RusProfile
             инн_display = первый_кредит.get("ИНН_кредитора") or DocumentProcessor.get_bank_inn(кредитор_display)
             
             print(f"[DEBUG_INN] ИНН после get_bank_inn: {инн_display}")
+            
+            # ВАЖНО: Если нашли ИНН через RusProfile, нужно сохранить его в структуру кредита
+            # чтобы он был доступен при выводе других полей, если потребуется
+            if инн_display:
+                for cr in credits_list:
+                    cr["ИНН_кредитора"] = инн_display
             
             # Добавляем префикс "ИНН " если ИНН найден
             if инн_display:
