@@ -487,7 +487,7 @@ async function viewDebtor(debtorId) {
                     docs: []
                 },
                 'Кредитные истории': {
-                    keywords: ['кредитный отчет', 'kreditnyj otchet', 'kreditnyi otchet', 'окб', 'okb', 'бки', 'bki', 'нбки', 'nbki', 'отчет', 'otchet', 'vypiska iz okb', 'vypiska iz bki', 'vypiska iz nbki'],
+                    keywords: ['кредитный отчет', 'kreditnyj otchet', 'kreditnyi otchet', 'окб', 'okb', 'бки', 'bki', 'нбки', 'nbki', 'отчет', 'otchet', 'vypiska iz okb', 'vypiska iz bki', 'vypiska iz nbki', 'скоринг'],
                     docs: []
                 },
                 'Недвижимость': {
