@@ -4541,18 +4541,30 @@ JSON:
 
             # ИНН кредитора
             print(f"[DEBUG_INN] Кредитор: {кредитор_display}")
-            print(f"[DEBUG_INN] ИНН из первого кредита: {первый_кредит.get('ИНН_кредитора')}")
             
-            # Получаем ИНН: либо из документа, либо из RusProfile
-            raw_inn = первый_кредит.get("ИНН_кредитора") or DocumentProcessor.get_bank_inn(кредитор_display)
+            # 1. Поиск ИНН по всем кредитам этой группы (а не только в первом)
+            found_inn = None
+            for credit in credits_list:
+                cand = credit.get("ИНН_кредитора")
+                if cand and str(cand).strip():
+                    found_inn = str(cand).strip()
+                    print(f"[DEBUG_INN] Нашел ИНН внутри группы (кредит от {credit.get('Дата_договора')}): {found_inn}")
+                    break
+            
+            # 2. Если не нашли в группе, ищем через RusProfile/Словарь
+            if not found_inn:
+                print(f"[DEBUG_INN] ИНН не найден в документах группы, ищу в реестре/кеше...")
+                found_inn = DocumentProcessor.get_bank_inn(кредитор_display)
+            
+            raw_inn = found_inn
             
             # Очищаем ИНН от мусора
             if raw_inn:
                 raw_inn = str(raw_inn).strip()
             
-            print(f"[DEBUG_INN] ИНН после get_bank_inn: {raw_inn}")
+            print(f"[DEBUG_INN] Итоговый ИНН: {raw_inn}")
             
-            # ВАЖНО: Если нашли ИНН через RusProfile, нужно сохранить его в структуру всех кредитов группы
+            # ВАЖНО: Если нашли ИНН через RusProfile или в другом кредите, сохраняем во ВСЕ кредиты группы
             if raw_inn:
                 for cr in credits_list:
                     cr["ИНН_кредитора"] = raw_inn
