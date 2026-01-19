@@ -8084,8 +8084,8 @@ JSON (СТРОГО этот формат):
                     print(f"      [BATCH] Всего извлечено кредиторов: {len(all_credits)}")
                 
                 # ДИАГНОСТИКА: если 0 кредитов в большом отчете - выводим подробности
-                if len(all_credits) == 0 and len(pages) > 10:
-                    print(f"      [WARNING] ⚠️ Большой отчет ({len(pages)} стр.) но 0 кредитов! Возможные причины:")
+                if len(all_credits) == 0 and len(page_images) > 10:
+                    print(f"      [WARNING] ⚠️ Большой отчет ({len(page_images)} стр.) но 0 кредитов! Возможные причины:")
                     print(f"         1. GPT не нашел таблицу 'ДЕЙСТВУЮЩИЕ КРЕДИТНЫЕ ДОГОВОРЫ'")
                     print(f"         2. Все договоры отфильтрованы по правилам исключения (постановления/ФССП)")
                     print(f"         3. GPT вернул невалидный JSON")
@@ -8272,7 +8272,7 @@ JSON (СТРОГО этот формат):
 }}"""
 
                 try:
-                    print(f"      Обработка ({len(pages)} стр.)...", end=" ", flush=True)
+                    print(f"      Обработка ({len(page_images)} стр.)...", end=" ", flush=True)
                     response_text, error_code = self.process_images_with_gpt(page_images, simple_prompt)
                     
                     # Если ошибка 400/500 - переключаемся на батч-режим
