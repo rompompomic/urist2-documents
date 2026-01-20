@@ -5571,10 +5571,24 @@ JSON:
                                 print(f"      ✓ ДУБЛИКАТ (пропущен): {сумма} <= {existing_sum}")
                             print(f"      Ключ: {target_key}")
                     else:
-                        # Новый кредит — добавляем
-                        print(f"      ✓ НОВЫЙ кредит добавлен")
-                        print(f"      Ключ: {dedup_key}")
-                        all_credits[dedup_key] = {
+                        # Новый кредит? Проверяем эвристически на дубликаты (разные даты, но одна суть)
+                        heuristic_dup_key = None
+                        
+                        for existing_k, existing_v in all_credits.items():
+                            if existing_v["Кредитор"] == кредитор_canonical:
+                                # 1. Совпадение по первоначальной сумме (очень надежно)
+                                ex_init = existing_v.get("Сумма_обязательства", Decimal(0))
+                                if сумма_обязательства > 100 and abs(ex_init - сумма_обязательства) < Decimal('1.0'):
+                                    heuristic_dup_key = existing_k
+                                    break
+                                
+                                # 2. Совпадение по текущей сумме (решает проблему дублей "Иной" vs "Потреб")
+                                ex_curr = existing_v.get("Сумма_задолженности", Decimal(0))
+                                if abs(ex_curr - сумма) < Decimal('1.0'):
+                                    heuristic_dup_key = existing_k
+                                    break
+                        
+                        credit_data_new = {
                             "Кредитор": кредитор_canonical,
                             "ИНН_кредитора": инн or None,
                             "ОГРН_кредитора": огрн or None,
@@ -5591,6 +5605,49 @@ JSON:
                             "Просрочка": просрочка,
                             "Источник": key,
                         }
+
+                        if heuristic_dup_key:
+                            # Нашли дубликат по эвристике!
+                            existing_v = all_credits[heuristic_dup_key]
+                            existing_sum = existing_v.get("Сумма_задолженности", Decimal(0))
+                            
+                            should_replace = False
+                            reason = ""
+                            
+                            if сумма > existing_sum:
+                                should_replace = True
+                                reason = f"сумма больше ({сумма} > {existing_sum})"
+                            elif сумма < existing_sum:
+                                should_replace = False
+                                reason = f"сумма меньше ({сумма} < {existing_sum})"
+                            else:
+                                # Суммы равны. Смотрим на качество даты.
+                                ex_date = existing_v.get("Дата_договора")
+                                is_ex_bad = not ex_date or "9999" in ex_date
+                                is_new_good = дата_договора and "9999" not in дата_договора
+                                
+                                if is_ex_bad and is_new_good:
+                                    should_replace = True
+                                    reason = f"лучше дата ({дата_договора} vs {ex_date})"
+                                else:
+                                    should_replace = False
+                                    reason = "дубликат (пропущен)"
+
+                            if should_replace:
+                                print(f"      ✓ ДУБЛИКАТ (эвристика, ОБНОВЛЕН): {reason}")
+                                print(f"        Удален старый: {heuristic_dup_key}")
+                                del all_credits[heuristic_dup_key]
+                                
+                                print(f"      ✓ НОВЫЙ кредит добавлен (замена)")
+                                print(f"      Ключ: {dedup_key}")
+                                all_credits[dedup_key] = credit_data_new
+                            else:
+                                print(f"      ✓ ДУБЛИКАТ (эвристика, пропущен): {reason}")
+                        else:
+                            # Совсем новый
+                            print(f"      ✓ НОВЫЙ кредит добавлен")
+                            print(f"      Ключ: {dedup_key}")
+                            all_credits[dedup_key] = credit_data_new
 
         # === ДОБАВЛЯЕМ СПРАВКИ О ЗАДОЛЖЕННОСТИ ===
         # Справки - это официальные документы от кредиторов с актуальной суммой долга
