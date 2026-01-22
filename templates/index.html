@@ -66,34 +66,54 @@
     </div>
 
     <div id="uploadModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content modal-xl">
             <span class="modal-close">&times;</span>
             <h2>Загрузка документов</h2>
             
-            <div class="form-group" style="margin-bottom: 20px;">
-                <label for="lawyerSelect" style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Выберите подписанта:</label>
-                <select id="lawyerSelect" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: white;">
-                    <option value="urist1">Изосимов Иван Дмитриевич</option>
-                    <option value="urist2">Кандеева Олеся Сергеевна</option>
-                    <option value="urist3">Переплетчиков Роман Борисович</option>
-                </select>
-            </div>
-            
-            <div id="dropZone" class="drop-zone">
-                <svg class="upload-icon" width="48" height="48" viewBox="0 0 24 24" fill="none">
-                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <p>Перетащите PDF документы сюда</p>
-                <p class="drop-zone-hint">или</p>
-                <button class="btn-browse" type="button" onclick="document.getElementById('fileInput').click()">Выбрать файлы</button>
-                <input type="file" id="fileInput" multiple accept=".pdf,.pdF,.pDf,.pDF,.Pdf,.PdF,.PDf,.PDF" style="display: none;">
-            </div>
+            <div class="upload-modal-body">
+                <div class="upload-form-section">
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label for="lawyerSelect" style="display: block; margin-bottom: 8px; font-weight: 500; color: var(--text-primary);">Выберите подписанта:</label>
+                        <select id="lawyerSelect" style="width: 100%; padding: 10px; border: 1px solid var(--border-secondary); border-radius: 4px; font-size: 14px; background: var(--bg-primary); color: var(--text-primary);">
+                            <option value="urist1">Изосимов Иван Дмитриевич</option>
+                            <option value="urist2">Кандеева Олеся Сергеевна</option>
+                            <option value="urist3">Переплетчиков Роман Борисович</option>
+                        </select>
+                    </div>
+                    
+                    <div id="dropZone" class="drop-zone">
+                        <svg class="upload-icon" width="48" height="48" viewBox="0 0 24 24" fill="none">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <p>Перетащите PDF документы сюда</p>
+                        <p class="drop-zone-hint">или</p>
+                        <button class="btn-browse" type="button" onclick="document.getElementById('fileInput').click()">Выбрать файлы</button>
+                        <input type="file" id="fileInput" multiple accept=".pdf,.pdF,.pDf,.pDF,.Pdf,.PdF,.PDf,.PDF" style="display: none;">
+                    </div>
 
-            <div id="fileList" class="file-list"></div>
+                    <div id="fileList" class="file-list"></div>
 
-            <div class="modal-actions">
-                <button class="btn-cancel" id="cancelUploadBtn">Отмена</button>
-                <button class="btn-submit" id="submitUploadBtn" disabled>Добавить</button>
+                    <div class="modal-actions">
+                        <button class="btn-cancel" id="cancelUploadBtn">Отмена</button>
+                        <button class="btn-submit" id="submitUploadBtn" disabled>Добавить</button>
+                    </div>
+                </div>
+
+                <div class="upload-help-section">
+                    <h3>Требования к файлам</h3>
+                    <p style="margin-bottom: 1rem;">Называйте документы так же, как при подаче в суд.</p>
+                    
+                    <div class="help-images">
+                        <div class="help-image-container">
+                            <span class="help-label good">✓ ПРАВИЛЬНО</span>
+                            <img src="/static/good.webp" alt="Пример правильного наименования">
+                        </div>
+                        <div class="help-image-container">
+                            <span class="help-label bad">✗ НЕПРАВИЛЬНО</span>
+                            <img src="/static/bad.webp" alt="Пример неправильного наименования">
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

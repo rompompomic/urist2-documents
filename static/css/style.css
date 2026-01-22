@@ -510,6 +510,130 @@ td:nth-child(5) {
     max-width: 900px;
 }
 
+.modal-xl {
+    max-width: 1200px;
+    height: auto;
+    max-height: 95vh;
+}
+
+.upload-modal-body {
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+}
+
+.upload-form-section {
+    flex: 1;
+    min-width: 0;
+}
+
+.upload-help-section {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-secondary);
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-secondary);
+}
+
+.upload-help-section h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+}
+
+.help-images {
+    display: flex;
+    flex-direction: row;
+    gap: 1rem;
+}
+
+.help-image-container {
+    flex: 1;
+    text-align: center;
+    min-width: 0;
+}
+
+.help-image-container img {
+    max-width: 100%;
+    height: auto;
+    max-height: 50vh;
+    object-fit: contain;
+    border: 1px solid var(--border-secondary);
+    border-radius: 4px;
+    margin-top: 0.5rem;
+    box-shadow: 0 2px 4px var(--shadow-light);
+}
+
+.help-label {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: block;
+    font-size: 0.9rem;
+}
+
+.help-label.good { color: #27ae60; } /* Green */
+.help-label.bad { color: #c0392b; }   /* Red */
+
+@media (max-width: 900px) {
+    .upload-modal-body {
+        flex-direction: column;
+        align-items: stretch; /* Растягиваем элементы на всю ширину */
+    }
+    
+    .upload-form-section {
+        width: 100%; /* Занимает всю ширину */
+    }
+
+    .upload-help-section {
+        width: 100%;
+        margin-top: 1rem;
+    }
+}
+
+@media (max-width: 600px) {
+    .modal-content {
+        padding: 1rem;
+        width: 95%;
+        margin: 10px;
+        max-height: 95vh;
+    }
+
+    .upload-modal-body {
+        gap: 1rem;
+    }
+
+    .help-images {
+        flex-direction: column;
+    }
+
+    .help-image-container img {
+        max-height: none; /* Убираем ограничение высоты */
+        width: 100%;      /* Ширина на весь контейнер */
+        height: auto;
+    }
+    
+    .upload-help-section {
+        padding: 1rem;
+    }
+
+    .drop-zone {
+        padding: 2rem 1rem;
+    }
+
+    /* Делаем кнопки на всю ширину */
+    .modal-actions {
+        flex-direction: column-reverse;
+        gap: 0.75rem;
+    }
+
+    .modal-actions button {
+        width: 100%;
+        padding: 12px;
+        font-size: 16px; /* Удобный размер для пальца */
+    }
+}
+
 .modal-content * {
     max-width: 100%;
     word-wrap: break-word;
@@ -1533,7 +1657,8 @@ td:nth-child(5) {
 
 .notification-success {
     border-left-color: #4CAF50;
-    background: linear-gradient(to right, rgba(76, 175, 80, 0.15) 0%, var(--bg-primary) 100%);
+    /* Используем множественный фон: градиент поверх сплошного цвета, чтобы избежать прозрачности */
+    background: linear-gradient(to right, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0) 100%), var(--bg-primary);
     color: var(--text-primary);
 }
 
