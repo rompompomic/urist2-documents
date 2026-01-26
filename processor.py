@@ -4958,11 +4958,11 @@ JSON:
                 if owner_fio:
                     for право in правообладатели:
                         фио = право.get("ФИО", "")
-                        if owner_fio in фио:
+                        # Проверяем, что и owner_fio, и фио не None и не пустые
+                        if owner_fio and фио and owner_fio in фио:
                             owner_found = True
                             owner_data = право
                             break
-                    
                     # Если не нашли владельца - пропускаем этот объект
                     if not owner_found:
                         continue
