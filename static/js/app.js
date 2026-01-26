@@ -155,9 +155,13 @@ document.getElementById('addDebtorBtn').addEventListener('click', () => {
 
 document.querySelectorAll('.modal-close, .btn-cancel').forEach(btn => {
     btn.addEventListener('click', function() {
-        uploadModal.classList.remove('show');
-        debtorModal.classList.remove('show');
-        dealsModal.classList.remove('show');
+        // Не закрывать основные модальные окна, если нажата кнопка отмены в подтверждении или при редактировании
+        if (this.id === 'confirmNoBtn' || this.id === 'cancelEditDebtorBtn') return;
+        
+        if (typeof uploadModal !== 'undefined') uploadModal.classList.remove('show');
+        if (typeof debtorModal !== 'undefined') debtorModal.classList.remove('show');
+        if (typeof dealsModal !== 'undefined') dealsModal.classList.remove('show');
+        // renameModal закрывается своей функцией
     });
 });
 
