@@ -1,198 +1,432 @@
 <!DOCTYPE html>
+
 <html lang="ru">
+
 <head>
+
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Система учета должников</title>
+
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
+
     <link rel="stylesheet" href="/static/css/style.css?v=5">
+
 </head>
+
 <body>
+
     <div class="container">
+
         <header>
+
             <div class="header-top">
+
                 <h1>Система учета должников</h1>
+
                 <button id="themeToggle" class="theme-toggle" title="Переключить тему" aria-label="Переключить тему">
+
                     <span class="theme-icon-light">☀️</span>
+
                     <span class="theme-icon-dark">🌙</span>
+
                 </button>
+
             </div>
+
             <div id="queueStatus" class="queue-status" style="display: none;">
+
                 <span class="queue-label">Очередь обработки:</span>
+
                 <span id="queueInfo" class="queue-info"></span>
+
             </div>
+
+
 
             <div id="notificationPermission" class="notification-permission" style="display: none;">
+
                 <span>🔔</span>
+
                 <span>Разрешите уведомления, чтобы получать оповещения о готовности документов</span>
+
                 <button id="enableNotificationsBtn" class="btn-enable-notifications">Разрешить</button>
+
             </div>
+
         </header>
 
+
+
         <div class="search-controls">
+
             <div class="search-box">
+
                 <input type="text" id="searchInput" placeholder="Поиск должников по ФИО..." />
+
                 <svg class="search-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+
                     <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="2"/>
+
                     <path d="M14 14L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+
                 </svg>
+
             </div>
+
             <button class="btn-add" id="addDebtorBtn">
+
                 <span>+</span> Добавить должника
+
             </button>
+
         </div>
+
+
 
         <div class="table-container">
+
             <table id="debtorsTable">
+
                 <thead>
+
                     <tr>
+
                         <th>Статус</th>
+
                         <th>ФИО</th>
+
                         <th>Подписант</th>
+
                         <th>Дата добавления</th>
+
                         <th>Действия</th>
+
                     </tr>
+
                 </thead>
+
                 <tbody id="debtorsTableBody">
+
                     <tr class="loading-row">
+
                         <td colspan="5">
+
                             <div class="loading-spinner"></div>
+
                             <p>Загрузка данных...</p>
+
                         </td>
+
                     </tr>
+
                 </tbody>
+
             </table>
+
         </div>
+
     </div>
 
+
+
     <div id="uploadModal" class="modal">
+
         <div class="modal-content modal-xl">
+
             <span class="modal-close">&times;</span>
+
             <h2>Загрузка документов</h2>
+
             
+
             <div class="upload-modal-body">
+
                 <div class="upload-form-section">
+
                     <div class="form-group" style="margin-bottom: 20px;">
+
                         <label for="lawyerSelect" style="display: block; margin-bottom: 8px; font-weight: 500; color: var(--text-primary);">Выберите подписанта:</label>
+
                         <select id="lawyerSelect" style="width: 100%; padding: 10px; border: 1px solid var(--border-secondary); border-radius: 4px; font-size: 14px; background: var(--bg-primary); color: var(--text-primary);">
+
                             <option value="urist1">Изосимов Иван Дмитриевич</option>
+
                             <option value="urist2">Кандеева Олеся Сергеевна</option>
+
                             <option value="urist3">Переплетчиков Роман Борисович</option>
+
                         </select>
+
                     </div>
+
                     
+
                     <div id="dropZone" class="drop-zone">
+
                         <svg class="upload-icon" width="48" height="48" viewBox="0 0 24 24" fill="none">
+
                             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
                         </svg>
+
                         <p>Перетащите PDF документы сюда</p>
+
                         <p class="drop-zone-hint">или</p>
+
                         <button class="btn-browse" type="button" onclick="document.getElementById('fileInput').click()">Выбрать файлы</button>
+
                         <input type="file" id="fileInput" multiple accept=".pdf,.pdF,.pDf,.pDF,.Pdf,.PdF,.PDf,.PDF" style="display: none;">
+
                     </div>
+
+
 
                     <div id="fileList" class="file-list"></div>
 
+
+
                     <div class="modal-actions">
+
                         <button class="btn-cancel" id="cancelUploadBtn">Отмена</button>
+
                         <button class="btn-submit" id="submitUploadBtn" disabled>Добавить</button>
+
                     </div>
+
                 </div>
+
+
 
                 <div class="upload-help-section">
+
                     <h3>Требования к файлам</h3>
+
                     <p style="margin-bottom: 1rem;">Называйте документы так же, как при подаче в суд.</p>
+
                     
+
                     <div class="help-images">
+
                         <div class="help-image-container">
+
                             <span class="help-label good">✓ ПРАВИЛЬНО</span>
+
                             <img src="/static/good.webp" alt="Пример правильного наименования">
+
                         </div>
+
                         <div class="help-image-container">
+
                             <span class="help-label bad">✗ НЕПРАВИЛЬНО</span>
+
                             <img src="/static/bad.webp" alt="Пример неправильного наименования">
+
                         </div>
+
                     </div>
+
                 </div>
+
             </div>
+
         </div>
+
     </div>
+
+
 
     <div id="debtorModal" class="modal">
+
         <div class="modal-content modal-wide">
+
             <span class="modal-close">&times;</span>
+
             <h2 id="debtorName">Загрузка...</h2>
+
             
+
             <!-- Информация о должнике -->
+
             <div class="debtor-info-section">
+
                 <div class="section-header">
+
                     <h3>Информация о должнике</h3>
+
                     <span id="debtorLawyerInfo" style="margin-left: auto; margin-right: 15px; color: #666; font-size: 14px;"></span>
+
                     <button class="btn-edit" id="editDebtorDataBtn" onclick="toggleEditMode()">Редактировать</button>
+
                 </div>
+
                 <div id="debtorDataContainer" class="debtor-data-grid">
+
                     <div class="loading-spinner"></div>
+
                 </div>
+
                 <div id="debtorDataActions" class="debtor-data-actions" style="display: none;">
+
                     <button class="btn-save" onclick="saveDebtorData()">Сохранить</button>
+
                     <button class="btn-cancel" onclick="cancelEditMode()">Отмена</button>
+
                 </div>
-            </div>
-            
-            <div class="documents-grid">
-                <div class="doc-section">
-                    <h3>Загруженные документы</h3>
-                    <div id="uploadedDocs" class="doc-list">
-                        <div class="loading-spinner"></div>
-                    </div>
-                </div>
-                
-                <div class="doc-section">
-                    <h3>Сгенерированные документы</h3>
-                    <div id="generatedDocs" class="doc-list">
-                        <div class="loading-spinner"></div>
-                    </div>
-                    <button class="btn-regenerate" id="regenerateDocsBtn" onclick="regenerateDocuments()" style="display: none;">
-                        Перезаполнить документы
-                    </button>
-                </div>
+
             </div>
 
-            <div class="modal-actions">
-                <button class="btn-delete" id="deleteDebtorBtn">Удалить должника</button>
-                <button class="btn-cancel">Закрыть</button>
+            
+
+            <div class="documents-grid">
+
+                <div class="doc-section">
+
+                    <div class="section-top-actions" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+
+                        <h3>Загруженные документы</h3>
+
+                        <div style="display: flex; gap: 5px;">
+
+                            <button id="saveDocsChangesBtn" class="btn-sm btn-save" style="display: none; font-size: 12px; padding: 4px 8px;">Применить изменения</button>
+
+                            <button id="addDocBtn" class="btn-sm" style="font-size: 12px; padding: 4px 8px;">+ Добавить</button>
+
+                            <input type="file" id="addDocInput" multiple accept=".pdf" style="display: none;">
+
+                        </div>
+
+                    </div>
+
+                    <div id="uploadedDocs" class="doc-list">
+
+                        <div class="loading-spinner"></div>
+
+                    </div>
+
+                </div>
+
+                
+
+                <div class="doc-section">
+
+                    <h3>Сгенерированные документы</h3>
+
+                    <div id="generatedDocs" class="doc-list">
+
+                        <div class="loading-spinner"></div>
+
+                    </div>
+
+                    <div class="regenerate-actions" style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+
+                        <button class="btn-refill" id="refillDocsBtn" onclick="regenerateDocuments(false)" style="display: none; flex: 1;">
+                            Перезаполнить документы
+                        </button>
+
+                        <button class="btn-regenerate" id="regenerateDocsBtn" onclick="regenerateDocuments(true)" style="display: none; flex: 1;">
+                            Перегенерировать документы
+                        </button>
+
+                    </div>
+
+                </div>
+
             </div>
+
+
+
+            <div class="modal-actions">
+
+                <button class="btn-delete" id="deleteDebtorBtn">Удалить должника</button>
+
+                <button class="btn-cancel">Закрыть</button>
+
+            </div>
+
         </div>
+
     </div>
+
+
 
     <div id="dealsModal" class="modal">
+
         <div class="modal-content modal-wide">
+
             <span class="modal-close">&times;</span>
+
             <h2>Сделки за последние 3 года</h2>
+
             <p id="dealsDebtorName" style="color: #666; margin-bottom: 20px;"></p>
+
             
+
             <div id="dealsList" class="deals-list">
+
                 <div class="loading-spinner"></div>
+
             </div>
 
+
+
             <div class="modal-actions">
+
                 <button class="btn-cancel">Закрыть</button>
+
             </div>
+
         </div>
+
     </div>
+
+
 
     <!-- Модальное окно подтверждения -->
+
     <div id="confirmModal" class="modal">
+
         <div class="modal-content modal-confirm">
+
             <h3 id="confirmTitle">Подтверждение</h3>
+
             <p id="confirmMessage">Вы уверены?</p>
+
             <div class="modal-actions">
+
                 <button class="btn-confirm" id="confirmYesBtn">Да</button>
+
                 <button class="btn-cancel" id="confirmNoBtn">Отмена</button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <script src="/static/js/app.js"></script>
+
+
+
+    <div id="renameModal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <span class="modal-close" onclick="closeRenameModal()">&times;</span>
+            <h3>Переименовать документ</h3>
+            <div class="form-group" style="margin: 20px 0;">
+                <label for="renameInput" style="display: block; margin-bottom: 8px;">Новое имя файла:</label>
+                <input type="text" id="renameInput" class="form-control" style="width: 100%; padding: 8px; border: 1px solid var(--border-secondary); border-radius: 4px;">
+                <input type="hidden" id="renameDocId">
+            </div>
+            <div class="modal-actions" style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn-cancel" onclick="closeRenameModal()">Отмена</button>
+                <button class="btn-save" onclick="submitRename()">Сохранить</button>
             </div>
         </div>
     </div>
-
-    <script src="/static/js/app.js"></script>
+    
 </body>
 </html>

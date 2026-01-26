@@ -461,104 +461,10 @@ async function viewDebtor(debtorId) {
         const uploadedDocs = document.getElementById('uploadedDocs');
         const generatedDocs = document.getElementById('generatedDocs');
         
-        if (debtor.documents.uploaded.length === 0) {
-            uploadedDocs.innerHTML = '<p class="empty-state">Нет загруженных документов</p>';
-        } else {
-            // Группируем документы по категориям
-            const categories = {
-                'Личные документы': {
-                    keywords: ['паспорт', 'pasport', 'инн', 'inn', 'снилс', 'snils', 'свидетельство о браке', 'свидетельство о разводе', 'брак', 'brak', 'развод', 'razvod'],
-                    docs: []
-                },
-                'Дети': {
-                    keywords: ['дети', 'детей', 'child', 'children', 'свидетельство о рождении', 'spravka o rozhdenii', 'birth certificate'],
-                    docs: []
-                },
-                'Трудовые документы': {
-                    keywords: ['трудовая', 'trudovaya', 'trudovoj', 'сведения о трудовой', 'svedeniya o trudovoj', 'справка с места работы', 'этк', 'etk', 'szv'],
-                    docs: []
-                },
-                'Справки о доходах': {
-                    keywords: ['2-ндфл', '2ндфл', '2 ndfl', '2ndfl', 'справка о доходах', 'spravka o dohodah', 'справка сфр', 'пенсия', 'pensiya', 'пособие', 'posobie', 'пособий', 'доходах', 'dohodah'],
-                    docs: []
-                },
-                'Пособия и льготы': {
-                    keywords: ['егиссо', 'ЕГИССО', 'egisso', 'пособия', 'posobiya', 'льгот', 'lgot', 'выплат', 'vyplat', 'социальных выплат', 'едв', 'edv'],
-                    docs: []
-                },
-                'Кредитные истории': {
-                    keywords: ['кредитный отчет', 'kreditnyj otchet', 'kreditnyi otchet', 'окб', 'okb', 'бки', 'bki', 'нбки', 'nbki', 'отчет', 'otchet', 'vypiska iz okb', 'vypiska iz bki', 'vypiska iz nbki', 'скоринг'],
-                    docs: []
-                },
-                'Недвижимость': {
-                    keywords: ['выписка', 'vypiska', 'росреестр', 'rosreestr', 'кадастр', 'kadastr', 'егрн', 'egrn', 'Единый государственный реестр недвижимости', 'недвижимост', 'nedvizhimost'],
-                    docs: []
-                },
-                'Транспорт': {
-                    keywords: ['гибдд', 'gibdd', 'справка гибдд', 'spravka gibdd', 'транспортное средство', 'transportnoe sredstvo', 'автомобиль', 'avtomobil'],
-                    docs: []
-                },
-                'Банковские счета': {
-                    keywords: ['счета', 'scheta', 'schyota', 'счёта', 'счетов', 'schetov', 'банковских счетов', 'bankovskih schetov', 'список счетов', 'spisok schetov', 'spravka o schetah'],
-                    docs: []
-                },
-                'Судебные документы': {
-                    keywords: ['постановление', 'postanovlenie', 'пристав', 'pristav', 'фссп', 'fssp', 'исполнительное производство', 'ispolnitelnoe proizvodstvo'],
-                    docs: []
-                },
-                'Налоги и сборы': {
-                    keywords: ['налог', 'nalog', 'фнс', 'fns', 'ифнс', 'ifns', 'уведомление', 'uvedomlenie',  'ЕГРИП' , 'егрип'],
-                    docs: []
-                },
-                'Другие документы': {
-                    keywords: [],
-                    docs: []
-                }
-            };
-            
-            // Распределяем документы по категориям
-            debtor.documents.uploaded.forEach(doc => {
-                const filename = doc.filename.toLowerCase();
-                let categorized = false;
-                
-                for (const [categoryName, category] of Object.entries(categories)) {
-                    if (categoryName === 'Другие документы') continue;
-                    
-                    if (category.keywords.some(kw => filename.includes(kw))) {
-                        category.docs.push(doc);
-                        categorized = true;
-                        break;
-                    }
-                }
-                
-                if (!categorized) {
-                    categories['Другие документы'].docs.push(doc);
-                }
-            });
-            
-            // Формируем HTML с группировкой
-            uploadedDocs.innerHTML = Object.entries(categories)
-                .filter(([_, category]) => category.docs.length > 0)
-                .map(([categoryName, category]) => `
-                    <div class="doc-category">
-                        <div class="doc-category-header" onclick="toggleCategory(this)">
-                            <span class="category-arrow">▶</span>
-                            <span class="category-name">${categoryName}</span>
-                            <span class="category-count">(${category.docs.length})</span>
-                        </div>
-                        <div class="doc-category-content">
-                            ${category.docs.map(doc => `
-                                <div class="doc-item">
-                                    <span>${doc.filename}</span>
-                                    <button class="doc-download" onclick="downloadDoc(${doc.id})">
-                                        Скачать
-                                    </button>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                `).join('');
-        }
+        // Обновляем список загруженных документов
+        currentUploadedDocsList = debtor.documents.uploaded || [];
+        initDocsChanges();
+        renderUploadedDocs();
         
         if (debtor.documents.generated.length === 0) {
             generatedDocs.innerHTML = '<p class="empty-state">Документы еще не сгенерированы</p>';
@@ -602,6 +508,7 @@ async function loadDebtorData(debtorId) {
         
         if (response.status === 404) {
             container.innerHTML = '<p class="empty-state">Данные еще не извлечены из документов</p>';
+            document.getElementById('refillDocsBtn').style.display = 'none';
             document.getElementById('regenerateDocsBtn').style.display = 'none';
             return;
         }
@@ -614,12 +521,14 @@ async function loadDebtorData(debtorId) {
         debtorDataOriginal = JSON.parse(JSON.stringify(data)); // Глубокая копия
         displayDebtorData(data);
         
-        // Показываем кнопку перегенерации если данные есть
+        // Показываем кнопки управления
+        document.getElementById('refillDocsBtn').style.display = 'block';
         document.getElementById('regenerateDocsBtn').style.display = 'block';
         
     } catch (error) {
         console.error('Error loading debtor data:', error);
         container.innerHTML = '<p class="empty-state">Ошибка загрузки данных должника</p>';
+        document.getElementById('refillDocsBtn').style.display = 'none';
         document.getElementById('regenerateDocsBtn').style.display = 'none';
     }
 }
@@ -748,84 +657,82 @@ async function saveDebtorData() {
     }
 }
 
-async function regenerateDocuments() {
+async function regenerateDocuments(isFullRegen) {
     if (!currentDebtorId) return;
     
+    let title, message, url, method, body;
+    
+    if (isFullRegen) {
+        title = 'Полная перегенерация';
+        message = 'Будет выполнен полный перезапуск обработки: парсинг всех PDF, удаление текущих данных и генерация новых. Это может занять несколько минут. Продолжить?';
+        url = `/api/debtors/${currentDebtorId}/reprocess`;
+        method = 'POST';
+        body = null;
+    } else { // Refill (Fill Only)
+        title = 'Перезаполнение шаблонов';
+        message = 'Документы будут пересозданы на основе ТЕКУЩИХ данных из формы. Используйте это после ручного редактирования полей. Продолжить?';
+        url = `/api/debtors/${currentDebtorId}/data`;
+        method = 'PUT';
+        body = JSON.stringify(debtorDataOriginal);
+    }
+
     const confirmed = await showConfirm(
-        'Перегенерация документов',
-        'Перегенерировать все документы на основе текущих данных?',
-        false
+        title, 
+        message,
+        isFullRegen // danger if full regen
     );
     
     if (!confirmed) return;
     
-    // Показываем индикатор загрузки с затемнением
-    const loading = showLoading('Пожалуйста, подождите...');
+    // Показываем индикатор загрузки
+    const loading = showLoading(isFullRegen ? 'Отправка задачи в очередь...' : 'Перезаполнение документов...');
     
     try {
-        // Запускаем генерацию документов
-        const response = await fetch(`/api/debtors/${currentDebtorId}/data`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(debtorDataOriginal)
+        const response = await fetch(url, {
+            method: method,
+            headers: body ? { 'Content-Type': 'application/json' } : {},
+            body: body
         });
         
         if (!response.ok) {
             hideLoading();
-            showNotification('Ошибка при запуске генерации документов', 'error');
+            showNotification('Ошибка при запуске операции', 'error');
             return;
         }
         
-        console.log('[REGEN] Generation started, waiting 5 seconds...');
-        
-        // Ждем 5 секунд
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        
-        // Проверяем успешность генерации
-        const checkResponse = await fetch(`/api/debtors/${currentDebtorId}`);
-        if (!checkResponse.ok) {
-            hideLoading();
-            showNotification('Ошибка при проверке статуса генерации', 'error');
-            return;
-        }
-        
-        const debtor = await checkResponse.json();
-        
-        // Закрываем окно загрузки
-        hideLoading();
-        
-        console.log(`[REGEN] Check result: status=${debtor.status}, docs=${debtor.documents.generated.length}`);
-        
-        // Проверяем что документы действительно сгенерированы
-        if (debtor.status === 'completed' && debtor.documents.generated.length > 0) {
-            console.log('[REGEN] Completed successfully');
-            
-            // Показываем уведомление об успехе
-            showNotification('Документы успешно сгенерированы!', 'success');
-            
-            // Закрываем модальное окно
-            debtorModal.classList.remove('show');
-            
-            // Обновляем список должников на главной странице
-            await loadDebtors();
-            
-        } else if (debtor.status === 'error') {
-            console.log('[REGEN] Error during generation');
-            showNotification('Ошибка при генерации документов', 'error');
-            
+        if (isFullRegen) {
+             // For full regen, we just queue it
+             hideLoading();
+             showNotification('Запущена полная перегенерация. Должник отправлен в очередь.', 'success');
+             debtorModal.classList.remove('show');
+             loadDebtors();
         } else {
-            // Статус processing или что-то другое
-            console.log('[REGEN] Generation still in progress');
-            showNotification('Генерация запущена, документы будут готовы через несколько секунд', 'info', 5000);
-            
-            // Обновляем список должников
-            await loadDebtors();
+             // For refill, we wait as before
+             console.log('[REGEN] Refill started, waiting...');
+             
+             // Ждем 3 секунд
+             await new Promise(resolve => setTimeout(resolve, 3000));
+             
+             // Проверяем статус
+             const checkResponse = await fetch(`/api/debtors/${currentDebtorId}`);
+             if (checkResponse.ok) {
+                 const debtor = await checkResponse.json();
+                 if (debtor.status === 'completed') {
+                     showNotification('Документы успешно перезаполнены!', 'success');
+                     // Обновляем список документов в модальном окне
+                     viewDebtor(currentDebtorId);
+                 } else {
+                     showNotification('Запущено перезаполнение, документы появятся через несколько секунд', 'info');
+                 }
+             }
+             
+             hideLoading();
+             loadDebtors(); // Update list in bg
         }
-        
     } catch (error) {
-        console.error('Error regenerating documents:', error);
+        console.error('Error regenerating:', error);
         hideLoading();
-        showNotification('Ошибка при генерации документов', 'error');
+        showNotification('Ошибка при выполнении операции', 'error');
     }
 }
 
@@ -1200,3 +1107,172 @@ setInterval(() => {
 
 // Обновляем статус реестра каждые 30 секунд
 setInterval(updateRegistryStatus, 30000);
+
+// ============================================
+// УПРАВЛЕНИЕ ДОКУМЕНТАМИ
+// ============================================
+let currentUploadedDocsList = [];
+let pendingDocsChanges = { toDelete: [], toRename: {}, newFiles: [] };
+
+function initDocsChanges() {
+    pendingDocsChanges = { toDelete: [], toRename: {}, newFiles: [] };
+    updateDocsChangesUI();
+    const addInput = document.getElementById('addDocInput');
+    if (addInput) addInput.value = '';
+}
+
+function updateDocsChangesUI() {
+    const btn = document.getElementById('saveDocsChangesBtn');
+    if (!btn) return;
+    const count = pendingDocsChanges.toDelete.length + Object.keys(pendingDocsChanges.toRename).length + pendingDocsChanges.newFiles.length;
+    if (count > 0) {
+        btn.style.display = 'inline-block';
+        btn.textContent = 'Применить (' + count + ')';
+    } else {
+        btn.style.display = 'none';
+        btn.textContent = 'Применить изменения';
+    }
+}
+
+function renderUploadedDocs() {
+    const container = document.getElementById('uploadedDocs');
+    if (!container) return;
+    let docs = [...currentUploadedDocsList];
+    docs = docs.filter(d => !pendingDocsChanges.toDelete.includes(d.id));
+    
+    // Категории (оставляем как есть)
+    const categories = {
+        'Новые файлы': { keywords: [], docs: [] },
+        'Личные документы': { keywords: ['паспорт', 'pasport', 'инн', 'inn', 'снилс', 'snils', 'свидетельство о браке', 'свидетельство о разводе', 'брак', 'brak', 'развод', 'razvod'], docs: [] },
+        'Дети': { keywords: ['дети', 'детей', 'child', 'children', 'свидетельство о рождении', 'spravka o rozhdenii', 'birth certificate'], docs: [] },
+        'Трудовые документы': { keywords: ['трудовая', 'trudovaya', 'trudovoj', 'сведения о трудовой', 'svedeniya o trudovoj', 'справка с места работы', 'этк', 'etk', 'szv'], docs: [] },
+        'Справки о доходах': { keywords: ['2-ндфл', '2ндфл', '2 ndfl', '2ndfl', 'справка о доходах', 'spravka o dohodah', 'справка сфр', 'пенсия', 'pensiya', 'пособие', 'posobie', 'пособий', 'доходах', 'dohodah'], docs: [] },
+        'Пособия и льготы': { keywords: ['егиссо', 'ЕГИССО', 'egisso', 'пособия', 'posobiya', 'льгот', 'lgot', 'выплат', 'vyplat', 'социальных выплат', 'едв', 'edv'], docs: [] },
+        'Кредитные истории': { keywords: ['кредитный отчет', 'kreditnyj otchet', 'kreditnyi otchet', 'окб', 'okb', 'бки', 'bki', 'нбки', 'nbki', 'отчет', 'otchet', 'vypiska iz okb', 'vypiska iz bki', 'vypiska iz nbki', 'скоринг'], docs: [] },
+        'Недвижимость': { keywords: ['выписка', 'vypiska', 'росреестр', 'rosreestr', 'кадастр', 'kadastr', 'егрн', 'egrn', 'Единый государственный реестр недвижимости', 'недвижимост', 'nedvizhimost'], docs: [] },
+        'Банковские счета': { keywords: ['счета', 'scheta', 'schyota', 'счёта', 'счетов', 'schetov', 'банковских счетов', 'bankovskih schetov', 'список счетов', 'spisok schetov', 'spravka o schetah'], docs: [] },
+        'Судебные документы': { keywords: ['постановление', 'postanovlenie', 'пристав', 'pristav', 'фссп', 'fssp', 'исполнительное производство', 'ispolnitelnoe proizvodstvo'], docs: [] },
+        'Налоги и сборы': { keywords: ['налог', 'nalog', 'фнс', 'fns', 'ифнс', 'ifns', 'уведомление', 'uvedomlenie',  'ЕГРИП' , 'егрип'], docs: [] },
+        'Транспорт': { keywords: ['гибдд', 'gibdd', 'справка гибдд', 'spravka gibdd', 'транспортное средство', 'transportnoe sredstvo', 'автомобиль', 'avtomobil'], docs: [] },
+        'Другие документы': { keywords: [], docs: [] }
+    };
+
+    docs.forEach(doc => {
+        const docName = pendingDocsChanges.toRename[doc.id] || doc.filename;
+        const nameLower = docName.toLowerCase();
+        let categorized = false;
+        for (const [catName, cat] of Object.entries(categories)) {
+            if (catName === 'Другие документы' || catName === 'Новые файлы') continue;
+            if (cat.keywords.some(kw => nameLower.includes(kw))) { cat.docs.push({ ...doc, filename: docName, isNew: false }); categorized = true; break; }
+        }
+        if (!categorized) categories['Другие документы'].docs.push({ ...doc, filename: docName, isNew: false });
+    });
+
+    pendingDocsChanges.newFiles.forEach((file, index) => {
+        categories['Новые файлы'].docs.push({ id: 'new-' + index, filename: file.name, isNew: true, fileObj: file });
+    });
+
+    container.innerHTML = Object.entries(categories).filter(([_, cat]) => cat.docs.length > 0).map(([catName, cat]) => `
+        <div class="doc-category">
+            <div class="doc-category-header" onclick="toggleCategory(this)" style="${catName.startsWith('Новые') ? 'background:#e8f5e9;' : ''}">
+                <span class="category-arrow">▼</span>
+                <span class="category-name">${catName}</span>
+                <span class="category-count">(${cat.docs.length})</span>
+            </div>
+            <div class="doc-category-content" style="display: block;">
+                ${cat.docs.map(doc => `
+                    <div class="doc-item ${doc.isNew ? 'is-new' : ''}">
+                        <div class="doc-info">
+                            ${doc.isNew ? '<span class="badge-new" style="background:#4CAF50;color:white;padding:2px 4px;font-size:10px;border-radius:3px;margin-right:5px;">NEW</span>' : ''}
+                            <span class="doc-name" title="${doc.filename}">${doc.filename}</span>
+                        </div>
+                        <div class="doc-actions">
+                            ${!doc.isNew ? `
+                                <!-- Кнопка переименования -->
+                                <button class="btn-icon btn-action-edit" onclick="event.stopPropagation(); startRenameDoc(${doc.id}, '${doc.filename.replace(/'/g, "\\'")}')" title="Переименовать">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+                                </button>
+                                
+                                <!-- Кнопка скачивания -->
+                                <button class="btn-icon btn-action-download" onclick="event.stopPropagation(); downloadDoc(${doc.id})" title="Скачать">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download-icon lucide-download"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
+                                </button>
+                            ` : ''}
+                            
+                            <!-- Кнопка удаления -->
+                            <button class="btn-icon btn-action-delete" onclick="event.stopPropagation(); ${doc.isNew ? `cancelAddDoc('${doc.id}')` : `markDocForDelete(${doc.id})`}" title="Удалить">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `).join('') || '<p class="empty-state">Нет загруженных документов</p>';
+    
+    // Если вы уже подключили lucide, можно вызвать lucide.createIcons() здесь
+}
+
+
+function markDocForDelete(id) { if (!pendingDocsChanges.toDelete.includes(id)) { pendingDocsChanges.toDelete.push(id); updateDocsChangesUI(); renderUploadedDocs(); } }
+// function startRenameDoc(id, currentName) { const newName = prompt('Введите новое имя файла:', currentName); if (newName && newName !== currentName) { pendingDocsChanges.toRename[id] = newName; updateDocsChangesUI(); renderUploadedDocs(); } }
+function startRenameDoc(id, currentName) {
+    const modal = document.getElementById('renameModal');
+    const input = document.getElementById('renameInput');
+    const hiddenId = document.getElementById('renameDocId');
+    if (!modal || !input || !hiddenId) return;
+    
+    input.value = currentName;
+    hiddenId.value = id;
+    modal.classList.add('show');
+    input.focus();
+}
+
+function closeRenameModal() {
+    document.getElementById('renameModal').classList.remove('show');
+}
+
+function submitRename() {
+    const input = document.getElementById('renameInput');
+    const hiddenId = document.getElementById('renameDocId');
+    if (!input || !hiddenId) return;
+    
+    const newName = input.value.trim();
+    const id = parseInt(hiddenId.value);
+    
+    if (newName && !isNaN(id)) {
+        pendingDocsChanges.toRename[id] = newName;
+        updateDocsChangesUI();
+        renderUploadedDocs();
+    }
+    
+    closeRenameModal();
+}
+
+function handleAddFiles(files) { const fileArray = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf')); if (fileArray.length > 0) { pendingDocsChanges.newFiles.push(...fileArray); updateDocsChangesUI(); renderUploadedDocs(); } }
+function cancelAddDoc(tempId) { const index = parseInt(tempId.split('-')[1]); if (!isNaN(index)) { pendingDocsChanges.newFiles.splice(index, 1); updateDocsChangesUI(); renderUploadedDocs(); } }
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    const addBtn = document.getElementById('addDocBtn');
+    const addInput = document.getElementById('addDocInput');
+    if (addBtn && addInput) { addBtn.addEventListener('click', () => addInput.click()); addInput.addEventListener('change', (e) => handleAddFiles(e.target.files)); }
+    const saveBtn = document.getElementById('saveDocsChangesBtn');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+            if (!currentDebtorId) return;
+            const loading = showLoading('Применение изменений...');
+            try {
+                for (const id of pendingDocsChanges.toDelete) await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+                for (const [id, name] of Object.entries(pendingDocsChanges.toRename)) await fetch(`/api/documents/${id}/rename`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ filename: name }) });
+                if (pendingDocsChanges.newFiles.length > 0) {
+                    const formData = new FormData();
+                    pendingDocsChanges.newFiles.forEach(f => formData.append('files[]', f));
+                    await fetch(`/api/debtors/${currentDebtorId}/documents`, { method: 'POST', body: formData });
+                }
+                showNotification('Изменения сохранены', 'success');
+                viewDebtor(currentDebtorId);
+            } catch (e) { console.error(e); showNotification('Ошибка при сохранении', 'error'); } finally { hideLoading(); }
+        });
+    }
+});

@@ -729,13 +729,6 @@ def save_debtor_data_only(debtor_id):
         except Exception:
             pass
 
-        # Normalize LINE_BREAK placeholders before saving
-        try:
-            from processor import DocumentProcessor
-            current_data = DocumentProcessor._normalize_line_breaks(current_data)
-        except Exception:
-            pass
-
         # Сохраняем обратно
         with open(result_file, 'w', encoding='utf-8') as f:
             json.dump(current_data, f, ensure_ascii=False, indent=2)
@@ -754,6 +747,154 @@ def save_debtor_data_only(debtor_id):
         print(f"[SAVE_DATA ERROR] {e}")
         safe_print_exc()
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debtors/<debtor_id>/reprocess', methods=['POST'])
+def reprocess_debtor(debtor_id):
+    """Отправить должника на полную перегенерацию (через очередь)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Проверяем существование должника
+    cursor.execute('SELECT id FROM debtors WHERE id = ?', (debtor_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Debtor not found'}), 404
+    
+    # Создаем задание в processing_jobs
+    cursor.execute('''
+        INSERT INTO processing_jobs (debtor_id, status, created_at)
+        VALUES (?, 'queued', ?)
+    ''', (debtor_id, datetime.now().isoformat()))
+    
+    # Обновляем статус должника
+    cursor.execute('UPDATE debtors SET status = "queued" WHERE id = ?', (debtor_id,))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'Должник отправлен на перегенерацию'})
+
+@app.route('/api/documents/<int:doc_id>', methods=['DELETE'])
+def delete_document(doc_id):
+    """Удалить конкретный документ."""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM documents WHERE id = ?', (doc_id,))
+    doc = cursor.fetchone()
+    
+    if not doc:
+        conn.close()
+        return jsonify({'error': 'Document not found'}), 404
+        
+    filepath = Path(doc['filepath'])
+    try:
+        if filepath.exists():
+            filepath.unlink()
+    except Exception as e:
+        print(f"[ERROR] Failed to delete file {filepath}: {e}")
+        
+    cursor.execute('DELETE FROM documents WHERE id = ?', (doc_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/documents/<int:doc_id>/rename', methods=['PUT'])
+def rename_document(doc_id):
+    """Переименовать документ."""
+    new_name = request.json.get('filename')
+    if not new_name:
+        return jsonify({'error': 'New filename is required'}), 400
+        
+    if not new_name.lower().endswith('.pdf'):
+         new_name += '.pdf'
+         
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM documents WHERE id = ?', (doc_id,))
+    doc = cursor.fetchone()
+    
+    if not doc:
+        conn.close()
+        return jsonify({'error': 'Document not found'}), 404
+        
+    old_path = Path(doc['filepath'])
+    if not old_path.exists():
+         return jsonify({'error': 'Original file not found on disk'}), 404
+         
+    new_path = old_path.parent / new_name
+    
+    try:
+        old_path.rename(new_path)
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': f'Failed to rename file: {e}'}), 500
+        
+    cursor.execute('UPDATE documents SET filename = ?, filepath = ? WHERE id = ?', 
+                   (new_name, str(new_path), doc_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/debtors/<debtor_id>/documents', methods=['POST'])
+def add_debtor_documents(debtor_id):
+    """Добавить документы к существующему должнику."""
+    # Логика похожа на /api/upload но без создания должника
+    if 'files[]' not in request.files:
+        return jsonify({'error': 'No files part'}), 400
+        
+    files = request.files.getlist('files[]')
+    if not files or files[0].filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Проверяем существование
+    cursor.execute('SELECT id FROM debtors WHERE id = ?', (debtor_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Debtor not found'}), 404
+        
+    uploaded_count = 0
+    save_dir = app.config['UPLOAD_FOLDER'] / debtor_id
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    for file in files:
+        if file and allowed_file(file.filename):
+            try:
+                filename = custom_secure_filename(file.filename)
+               
+                # Если файл существует, добавляем суффикс
+                save_path = save_dir / filename
+                if save_path.exists():
+                     base, ext = os.path.splitext(filename)
+                     timestamp = int(time.time())
+                     filename = f"{base}_{timestamp}{ext}"
+                     save_path = save_dir / filename
+
+                file.save(save_path)
+                
+                cursor.execute(
+                    'INSERT INTO documents (debtor_id, filename, filepath, doc_type) VALUES (?, ?, ?, ?)',
+                    (debtor_id, filename, str(save_path), 'uploaded')
+                )
+                uploaded_count += 1
+            except Exception as e:
+                print(f"[ERROR] Failed to save {file.filename}: {e}")
+                
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        'success': True, 
+        'uploaded_count': uploaded_count, 
+        'message': f'Успешно загружено {uploaded_count} документов'
+    })
+
 
 
 @app.route('/api/debtors/<debtor_id>/data', methods=['PUT'])

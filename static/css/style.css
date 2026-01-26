@@ -831,9 +831,31 @@ td:nth-child(5) {
     white-space: normal;
 }
 
-.doc-item:hover {
-    background: var(--bg-tertiary);
-    transform: translateX(5px);
+/* .doc-item:hover removed */
+
+.btn-icon {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    color: var(--text-primary);
+}
+
+.btn-icon:hover {
+    background-color: var(--shadow-light);
+    transform: scale(1.1);
+}
+
+/* Override hardcoded stroke colors in SVGs for theme compatibility */
+.btn-icon svg {
+    stroke: currentColor;
+    width: 20px;
+    height: 20px;
 }
 
 .doc-download {
@@ -868,10 +890,84 @@ td:nth-child(5) {
     }
 }
 
-.loading-row td {
-    text-align: center;
-    padding: 3rem 1rem;
+
+/* Button Refactor for Equal Sizing on Desktop */
+.regenerate-actions button {
+    box-shadow: 0 2px 5px var(--shadow-light);
+    transition: all 0.2s ease;
 }
+
+.regenerate-actions button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px var(--shadow-medium);
+}
+
+/* Document List Grid Fix */
+.doc-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.doc-name {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Icon Buttons for Uploaded Docs */
+.btn-action-edit,
+.btn-action-download,
+.btn-action-delete {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.btn-action-edit:hover { background-color: rgba(0, 0, 0, 0.05); color: #2196F3; }
+.btn-action-download:hover { background-color: rgba(0, 0, 0, 0.05); color: #4CAF50; }
+.btn-action-delete:hover { background-color: rgba(255, 0, 0, 0.1); color: #F44336; }
+
+/* Mobile Adaptation for Layout */
+@media (max-width: 768px) {
+    .documents-grid {
+        grid-template-columns: 1fr !important;
+        gap: 2rem;
+    }
+    
+    .regenerate-actions {
+        flex-direction: column;
+    }
+    
+    .regenerate-actions button {
+        width: 100%;
+        margin-bottom: 5px;
+    }
+    
+    .doc-item {
+        flex-wrap: wrap;
+    }
+    
+    .doc-info {
+        width: 100%;
+        margin-bottom: 5px;
+    }
+    
+    .doc-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}
+
 
 .empty-state {
     text-align: center;
@@ -1615,6 +1711,8 @@ td:nth-child(5) {
     background: #45a049;
 }
 
+/* .btn-regenerate removed to unify styles with #addDocBtn */
+/*
 .btn-regenerate {
     width: 100%;
     margin-top: 15px;
@@ -1632,6 +1730,7 @@ td:nth-child(5) {
 .btn-regenerate:hover {
     background: #F57C00;
 }
+*/
 
 /* Уведомления в интерфейсе */
 .notification {
@@ -1741,4 +1840,24 @@ td:nth-child(5) {
 
 .btn-confirm.danger:hover {
     background: #d32f2f;
+}
+
+/* Document Application Buttons (Add, Refill, Regenerate) */
+#addDocBtn,
+#refillDocsBtn,
+#regenerateDocsBtn {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 2px solid var(--border-primary);
+    border-radius: 4px;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    padding: 10px 15px; /* Unified padding */
+}
+
+#addDocBtn:hover,
+#refillDocsBtn:hover,
+#regenerateDocsBtn:hover {
+    background: var(--border-primary);
+    color: var(--bg-primary);
 }
