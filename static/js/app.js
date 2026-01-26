@@ -459,8 +459,8 @@ async function viewDebtor(debtorId) {
         const lawyerName = getLawyerDisplayName(debtor.lawyer || 'urist1');
         lawyerInfo.textContent = `Юрист: ${lawyerName}`;
         
-        // Загружаем данные должника из result.json
-        await loadDebtorData(debtorId);
+        // Загружаем данные должника из result.json, передавая статус
+        await loadDebtorData(debtorId, debtor.status);
         
         const uploadedDocs = document.getElementById('uploadedDocs');
         const generatedDocs = document.getElementById('generatedDocs');
@@ -504,7 +504,7 @@ function toggleCategory(header) {
     }
 }
 
-async function loadDebtorData(debtorId) {
+async function loadDebtorData(debtorId, status) {
     const container = document.getElementById('debtorDataContainer');
     
     try {
@@ -512,8 +512,10 @@ async function loadDebtorData(debtorId) {
         
         if (response.status === 404) {
             container.innerHTML = '<p class="empty-state">Данные еще не извлечены из документов</p>';
+            // Even if data is missing, we might want to allow regeneration if status is not processing/queued
+            const canRegenerate = status !== 'processing' && status !== 'queued';
             document.getElementById('refillDocsBtn').style.display = 'none';
-            document.getElementById('regenerateDocsBtn').style.display = 'none';
+            document.getElementById('regenerateDocsBtn').style.display = canRegenerate ? 'block' : 'none';
             return;
         }
         
@@ -525,9 +527,10 @@ async function loadDebtorData(debtorId) {
         debtorDataOriginal = JSON.parse(JSON.stringify(data)); // Глубокая копия
         displayDebtorData(data);
         
-        // Показываем кнопки управления
-        document.getElementById('refillDocsBtn').style.display = 'block';
-        document.getElementById('regenerateDocsBtn').style.display = 'block';
+        // Показываем кнопки управления ТОЛЬКО если статус не process и не queued
+        const shouldShow = status !== 'processing' && status !== 'queued';
+        document.getElementById('refillDocsBtn').style.display = shouldShow ? 'block' : 'none';
+        document.getElementById('regenerateDocsBtn').style.display = shouldShow ? 'block' : 'none';
         
     } catch (error) {
         console.error('Error loading debtor data:', error);
