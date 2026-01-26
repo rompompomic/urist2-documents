@@ -1176,14 +1176,19 @@ function renderUploadedDocs() {
         categories['Новые файлы'].docs.push({ id: 'new-' + index, filename: file.name, isNew: true, fileObj: file });
     });
 
-    container.innerHTML = Object.entries(categories).filter(([_, cat]) => cat.docs.length > 0).map(([catName, cat]) => `
+    container.innerHTML = Object.entries(categories).filter(([_, cat]) => cat.docs.length > 0).map(([catName, cat]) => {
+        const isNew = catName.startsWith('Новые');
+        const defaultDisplay = isNew ? 'block' : 'none';
+        const defaultArrow = isNew ? '▼' : '▶';
+
+        return `
         <div class="doc-category">
-            <div class="doc-category-header" onclick="toggleCategory(this)" style="${catName.startsWith('Новые') ? 'background:#e8f5e9;' : ''}">
-                <span class="category-arrow">▼</span>
+            <div class="doc-category-header" onclick="toggleCategory(this)" style="${isNew ? 'background:#e8f5e9;' : ''}">
+                <span class="category-arrow">${defaultArrow}</span>
                 <span class="category-name">${catName}</span>
                 <span class="category-count">(${cat.docs.length})</span>
             </div>
-            <div class="doc-category-content" style="display: block;">
+            <div class="doc-category-content" style="display: ${defaultDisplay};">
                 ${cat.docs.map(doc => `
                     <div class="doc-item ${doc.isNew ? 'is-new' : ''}">
                         <div class="doc-info">
@@ -1212,7 +1217,7 @@ function renderUploadedDocs() {
                 `).join('')}
             </div>
         </div>
-    `).join('') || '<p class="empty-state">Нет загруженных документов</p>';
+    `; }).join('') || '<p class="empty-state">Нет загруженных документов</p>';
     
     // Если вы уже подключили lucide, можно вызвать lucide.createIcons() здесь
 }
