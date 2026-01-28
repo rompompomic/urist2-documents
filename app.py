@@ -1239,6 +1239,12 @@ def process_documents_for_job(debtor_id):
         print(f"[DEBUG] Updated debtor record")
         
         if filled_templates:
+            # Очищаем старые сгенерированные документы во избежание дубликатов
+            cursor.execute(
+                'DELETE FROM documents WHERE debtor_id = ? AND is_generated = 1',
+                (debtor_id,)
+            )
+            
             for template_path in filled_templates:
                 if template_path and template_path.exists():
                     cursor.execute(

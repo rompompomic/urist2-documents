@@ -10,6 +10,7 @@ import re
 import tempfile
 import time
 import zipfile
+import difflib
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -160,6 +161,7 @@ class DocumentProcessor:
 5. Печати о детях (стр. 9-20):
         - Каждая печать "Сведения о детях" — ФИО и дата рождения ребёнка.
         - Собери ВСЕ записи о детях (здесь актуальны все).
+        - Если не получается прочесть ФИО — ставь null.
 
 Если OCR пустой, ориентируйся на макет: ФИО в верхнем левом блоке, красный номер справа, штамп регистрации под надписью "зарегистрирован".
 
@@ -788,6 +790,8 @@ JSON:
 - Раздел 1.3: Если есть блок "Ограничения/обременения" — перенеси ТОЛЬКО действующие обременения (игнорируй "погашено", "прекращено").
 - СДЕЛКА: если видишь смену собственников, переход права — извлеки дату, стороны сделки, основание (купля-продажа, дарение и т.д.).
 При отсутствии распознанного текста ориентируйся на таблицы: первая колонка название реквизита, вторая значение.
+
+Если тебе попалась выписка ЕГРН не попадающая под пункты, то все равно извлекай имущество, главное извлечь имущество!
 
 JSON ДЛЯ ВЫПИСКИ С ИМУЩЕСТВОМ (ОБРАТИ ВНИМАНИЕ: "Объекты" - это МАССИВ!):
 {
@@ -3650,31 +3654,75 @@ JSON:
                 # Старый формат: один объект = одно ТС
                 all_vehicles.append(data)
 
-        # Дедупликация по VIN: если несколько документов на одно ТС (СТС + ПТС),
-        # берем только один (приоритет у СТС, так как там актуальная информация)
-        seen_vins = {}
+        # Дедупликация по VIN (включая нечеткий поиск)
+        seen_vins = {} # Map cleaned_vin -> data
         deduplicated = []
         
         for data in all_vehicles:
-            vin = data.get("VIN", "")
-            if vin:
-                # Если VIN уже встречался, проверяем приоритет документа
-                if vin in seen_vins:
-                    existing_doc_type = seen_vins[vin].get("Документ", {}).get("Тип", "").upper()
-                    current_doc_type = data.get("Документ", {}).get("Тип", "").upper()
-                    # СТС приоритетнее ПТС (в СТС актуальная регистрация)
-                    if current_doc_type == "СТС" and existing_doc_type != "СТС":
-                        # Заменяем старую запись на СТС
-                        deduplicated.remove(seen_vins[vin])
-                        deduplicated.append(data)
-                        seen_vins[vin] = data
-                    # Иначе оставляем существующий документ
-                else:
-                    # VIN встречается впервые
-                    seen_vins[vin] = data
-                    deduplicated.append(data)
+            raw_vin = data.get("VIN", "")
+            
+            # Если VIN нет, добавляем как есть
+            if not raw_vin:
+                deduplicated.append(data)
+                continue
+                
+            # Нормализация VIN (убираем пробелы, тире и приводим к верхнему регистру)
+            current_vin = re.sub(r'[^A-Z0-9]', '', raw_vin.upper())
+            if not current_vin:
+                deduplicated.append(data)
+                continue
+            
+            is_duplicate = False
+            best_match_vin = None
+            
+            # 1. Точное совпадение
+            if current_vin in seen_vins:
+                is_duplicate = True
+                best_match_vin = current_vin
             else:
-                # Нет VIN - добавляем как есть
+                # 2. Нечеткий поиск (для борьбы с ошибками OCR: 8 vs 3, D vs 0, 8 vs 6)
+                # Порог 0.8 позволяет найти совпадение при ~3 различиях в 17 символах
+                best_ratio = 0.0
+                for seen_vin in seen_vins:
+                    ratio = difflib.SequenceMatcher(None, current_vin, seen_vin).ratio()
+                    if ratio > best_ratio:
+                        best_ratio = ratio
+                        best_match_vin = seen_vin
+                
+                if best_ratio > 0.8:
+                    is_duplicate = True
+                    print(f"      [DEDUP] Найден нечеткий дубликат VIN: {current_vin} ~ {best_match_vin} (ratio: {best_ratio:.2f})")
+            
+            if is_duplicate and best_match_vin:
+                # Логика выбора лучшей версии
+                existing_data = seen_vins[best_match_vin]
+                
+                existing_doc_type = str(existing_data.get("Документ", {}).get("Тип", "")).upper()
+                current_doc_type = str(data.get("Документ", {}).get("Тип", "")).upper()
+                
+                # Приоритет: СТС > ПТС > Договор
+                def get_priority(doc_type):
+                    if "СТС" in doc_type or "СВИДЕТЕЛЬСТВО" in doc_type: return 3
+                    if "ПТС" in doc_type or "ПАСПОРТ" in doc_type: return 2
+                    return 1
+                
+                current_prio = get_priority(current_doc_type)
+                existing_prio = get_priority(existing_doc_type)
+                
+                if current_prio > existing_prio:
+                    # Заменяем старую запись на новую, более приоритетную
+                    deduplicated.remove(existing_data)
+                    deduplicated.append(data)
+                    # Обновляем маппинг. Если VIN был разный (fuzzy), удаляем старый ключ, добавляем новый
+                    if best_match_vin != current_vin:
+                        del seen_vins[best_match_vin]
+                    seen_vins[current_vin] = data
+                    print(f"      [DEDUP] Обновлено: {existing_doc_type} -> {current_doc_type}")
+                else:
+                    print(f"      [DEDUP] Оставлено существующее: {existing_doc_type} (vs {current_doc_type})")
+            else:
+                # Новенький
+                seen_vins[current_vin] = data
                 deduplicated.append(data)
 
         descriptions = []
@@ -5257,31 +5305,75 @@ JSON:
         
         print(f"[VEHICLES_TABLE] После извлечения из массивов: {len(all_vehicles)} ТС")
         
-        # Дедупликация по VIN: если несколько документов на одно ТС (СТС + ПТС),
-        # берем только один (приоритет у СТС, так как там актуальная информация)
-        seen_vins = {}
+        # Дедупликация по VIN (включая нечеткий поиск)
+        seen_vins = {} # Map cleaned_vin -> data
         deduplicated = []
         
         for data in all_vehicles:
-            vin = data.get("VIN", "")
-            if vin:
-                # Если VIN уже встречался, проверяем приоритет документа
-                if vin in seen_vins:
-                    existing_doc_type = seen_vins[vin].get("Документ", {}).get("Тип", "").upper()
-                    current_doc_type = data.get("Документ", {}).get("Тип", "").upper()
-                    # СТС приоритетнее ПТС (в СТС актуальная регистрация)
-                    if current_doc_type == "СТС" and existing_doc_type != "СТС":
-                        # Заменяем старую запись на СТС
-                        deduplicated.remove(seen_vins[vin])
-                        deduplicated.append(data)
-                        seen_vins[vin] = data
-                    # Иначе оставляем существующий документ
-                else:
-                    # VIN встречается впервые
-                    seen_vins[vin] = data
-                    deduplicated.append(data)
+            raw_vin = data.get("VIN", "")
+            
+            # Если VIN нет, добавляем как есть
+            if not raw_vin:
+                deduplicated.append(data)
+                continue
+                
+            # Нормализация VIN (убираем пробелы, тире и приводим к верхнему регистру)
+            current_vin = re.sub(r'[^A-Z0-9]', '', raw_vin.upper())
+            if not current_vin:
+                deduplicated.append(data)
+                continue
+            
+            is_duplicate = False
+            best_match_vin = None
+            
+            # 1. Точное совпадение
+            if current_vin in seen_vins:
+                is_duplicate = True
+                best_match_vin = current_vin
             else:
-                # Нет VIN - добавляем как есть
+                # 2. Нечеткий поиск (для борьбы с ошибками OCR: 8 vs 3, D vs 0, 8 vs 6)
+                # Порог 0.8 позволяет найти совпадение при ~3 различиях в 17 символах
+                best_ratio = 0.0
+                for seen_vin in seen_vins:
+                    ratio = difflib.SequenceMatcher(None, current_vin, seen_vin).ratio()
+                    if ratio > best_ratio:
+                        best_ratio = ratio
+                        best_match_vin = seen_vin
+                
+                if best_ratio > 0.8:
+                    is_duplicate = True
+                    print(f"      [DEDUP] Найден нечеткий дубликат VIN: {current_vin} ~ {best_match_vin} (ratio: {best_ratio:.2f})")
+            
+            if is_duplicate and best_match_vin:
+                # Логика выбора лучшей версии
+                existing_data = seen_vins[best_match_vin]
+                
+                existing_doc_type = str(existing_data.get("Документ", {}).get("Тип", "")).upper()
+                current_doc_type = str(data.get("Документ", {}).get("Тип", "")).upper()
+                
+                # Приоритет: СТС > ПТС > Договор
+                def get_priority(doc_type):
+                    if "СТС" in doc_type or "СВИДЕТЕЛЬСТВО" in doc_type: return 3
+                    if "ПТС" in doc_type or "ПАСПОРТ" in doc_type: return 2
+                    return 1
+                
+                current_prio = get_priority(current_doc_type)
+                existing_prio = get_priority(existing_doc_type)
+                
+                if current_prio > existing_prio:
+                    # Заменяем старую запись на новую, более приоритетную
+                    deduplicated.remove(existing_data)
+                    deduplicated.append(data)
+                    # Обновляем маппинг. Если VIN был разный (fuzzy), удаляем старый ключ, добавляем новый
+                    if best_match_vin != current_vin:
+                        del seen_vins[best_match_vin]
+                    seen_vins[current_vin] = data
+                    print(f"      [DEDUP] Обновлено: {existing_doc_type} -> {current_doc_type}")
+                else:
+                    print(f"      [DEDUP] Оставлено существующее: {existing_doc_type} (vs {current_doc_type})")
+            else:
+                # Новенький
+                seen_vins[current_vin] = data
                 deduplicated.append(data)
         
         print(f"[VEHICLES_TABLE] После дедупликации: {len(deduplicated)} документов")
