@@ -1149,8 +1149,8 @@ JSON (СТРОГО этот формат):
 }}""",
         },
         "гибдд": {
-            "keywords": ["гибдд", "гаи", "транспорт", "птс", "стс", "свидетельство о регистрации тс", "паспорт транспортного средства", "автомобил", "мрэо", "госавтоинспекция", "государственная инспекция безопасности дорожного движения", "транспортное средство", "регистрация тс", "мвд"],
-            "prompt": """Документ ГИБДД о транспортном средстве (ПТС, СТС, выписка из реестра, договор купли-продажи, справка об отсутствии).
+            "keywords": ["гибдд", "гаи", "транспорт", "птс", "стс", "свидетельство о регистрации тс", "паспорт транспортного средства", "автомобил", "мрэо", "госавтоинспекция", "государственная инспекция безопасности дорожного движения", "транспортное средство", "регистрация тс", "мвд", "реестр транспортных средств", "сведения о транспортных средствах", "карточка учета", "vin"],
+            "prompt": """Документ ГИБДД о транспортном средстве (ПТС, СТС, выписка из реестра, справка, сведения из реестра).
 
 ⚠️ КРИТИЧЕСКИ ВАЖНО - МНОЖЕСТВЕННЫЕ ТРАНСПОРТНЫЕ СРЕДСТВА:
 - В ОДНОМ документе (выписка из реестра) может быть НЕСКОЛЬКО автомобилей
@@ -1171,7 +1171,7 @@ JSON (СТРОГО этот формат):
 
 ФОРМАТИРОВАНИЕ: Если текст в CAPS LOCK — приведи к нормальному виду.
 
-ИНСТРУКЦИИ ПО ИЗВЛЕЧЕНИЮ ДАННЫХ ИЗ ПТС/СТС:
+ИНСТРУКЦИИ ПО ИЗВЛЕЧЕНИЮ ДАННЫХ ИЗ ПТС/СТС/Выписка с госуслуг:
 
 1. МАРКА И МОДЕЛЬ:
    - В ПТС: "Марка, модель ТС"
@@ -1219,7 +1219,7 @@ JSON (СТРОГО этот формат):
    - Если залога нет - оставь null
 
 ВАЖНО:
-- Даже если документ размыт/повернут - СТАРАЙСЯ извлечь хотя бы марку, VIN и год!
+- Даже если документ размыт/повернут - СТАРАЙСЯ извлечь хотя бы что-то!
 - Если видишь только часть данных - извлекай что видишь, остальное ставь null
 - НЕ возвращай пустой JSON если хоть что-то читается!
 
@@ -1775,6 +1775,39 @@ JSON:
 Если реквизит не найден, ставь null. Никаких дополнительных комментариев.""",
         },
 
+        "свидетельство_о_заключении_брака": {
+            "keywords": ["свидетельство о заключении брака", "свидетельство о браке", "запись акта о заключении брака", "св-во о заключении брака", "св-во о браке"],
+            "prompt": """Ты обрабатываешь свидетельство о заключении брака.
+
+ФОРМАТИРОВАНИЕ: Если текст в CAPS LOCK — приведи к нормальному виду (ФИО с заглавной буквы).
+
+Найди в документе:
+- ФИО супруга (мужа)
+- ФИО супруги (жены)
+- Дата рождения супруга
+- Дата рождения супруги
+- Место рождения супруга
+- Место рождения супруги
+- Дата заключения брака
+- Орган ЗАГС
+- Номер записи акта
+
+Верни JSON:
+{
+  "Супруг_ФИО": "...",
+  "Супруга_ФИО": "...",
+  "Супруг_Дата_рождения": "ДД.ММ.ГГГГ",
+  "Супруга_Дата_рождения": "ДД.ММ.ГГГГ",
+  "Супруг_Место_рождения": "...",
+  "Супруга_Место_рождения": "...",
+  "Дата_заключения_брака": "ДД.ММ.ГГГГ",
+  "Орган_ЗАГС": "...",
+  "Номер_записи_акта": "...",
+  "Тип_документа": "свидетельство_о_браке"
+}
+Если реквизит не найден, ставь null.""",
+        },
+
         "свидетельство_о_расторжении_брака": {
             "keywords": ["свидетельство о расторжении брака", "свидетельство о разводе", "копия свидетельства о расторжении брака", "расторжение брака", "развод", "запись акта о расторжении брака", "св-во о расторжении брака", "св-во о раст брака","св-во л раст брака", "св во о расторжении брака", "св-о о расторжении брака", "св о о расторжении брака"],
             "prompt": """Ты обрабатываешь свидетельство о расторжении брака.
@@ -2136,7 +2169,7 @@ JSON:
         filename_lower = filename.lower().replace('_', ' ')
 
         # ПРИОРИТЕТ 1: Сначала проверяем документы СУПРУГА и БРАКА (они более специфичны)
-        spouse_doc_types = ["паспорт_супруга", "инн_супруга", "снилс_супруга", "свидетельство_о_расторжении_брака", "свидетельство_о_браке"]
+        spouse_doc_types = ["паспорт_супруга", "инн_супруга", "снилс_супруга", "свидетельство_о_расторжении_брака", "свидетельство_о_заключении_брака"]
         for doc_type in spouse_doc_types:
             if doc_type in DocumentProcessor.DOCUMENT_TYPES:
                 config = DocumentProcessor.DOCUMENT_TYPES[doc_type]
@@ -2238,13 +2271,29 @@ JSON:
                 return "налоговое_уведомление", config.get("prompt", "")
 
             # ГИБДД - заявление или справка (расширенная проверка)
-            gibdd_keywords = ["гибдд", "гаи", "мрэо", "госавтоинспекция", "госавтоинспекции", "государственная инспекция безопасности дорожного движения"]
-            transport_keywords = ["транспорт", "зарегистрирован", "заявление", "автомобил", "тс", "транспортн", "регистрац", "птс", "стс", "справка"]
+            gibdd_keywords = [
+                "гибдд", "гаи", "мрэо", 
+                "госавтоинспекция", "госавтоинспекции", 
+                "государственная инспекция безопасности дорожного движения",
+                "реестр транспортных средств", 
+                "реестра транспортных средств", # падежи
+                "сведения о транспортных средствах",
+                "карточка учета транспортного средства",
+                "паспорт транспортного средства"
+            ]
+            transport_keywords = ["транспорт", "зарегистрирован", "заявление", "автомобил", "тс", "транспортн", "регистрац", "птс", "стс", "справка", "vin", "идентификационный номер"]
             
             has_gibdd = any(kw in text_lower for kw in gibdd_keywords)
             has_transport = any(kw in text_lower for kw in transport_keywords)
-            
-            if has_gibdd or (has_transport and any(kw in filename_lower for kw in ["гибдд", "транспорт", "справка"])):
+            has_strong_transport = any(kw in text_lower for kw in ["vin", "идентификационный номер (vin)", "номер кузова", "номер шасси"])
+
+            # Логика детекции:
+            # 1. Есть ключевые слова ведомства/реестра (has_gibdd) -> точно ГИБДД
+            # 2. Есть слова про транспорт И (ключевики в имени файла ИЛИ сильные признаки в тексте типа VIN)
+            if has_gibdd or (has_transport and (
+                any(kw in filename_lower for kw in ["гибдд", "транспорт", "справка", "выписка", "реестр", "птс", "стс"]) or 
+                has_strong_transport
+            )):
                 config = DocumentProcessor.DOCUMENT_TYPES.get("гибдд", {})
                 return "гибдд", config.get("prompt", "")
 
@@ -2505,12 +2554,10 @@ JSON:
 
         return ""
 
-    # Кеш для результатов парсинга RusProfile (чтобы не парсить одно и то же)
-    _rusprofile_cache: Dict[str, tuple[Optional[str], Optional[str]]] = {}
 
     @staticmethod
     def parse_inn_and_address_from_rusprofile(company_name: str) -> tuple[Optional[str], Optional[str]]:
-        """Парсит ИНН и адрес организации с RusProfile.ru
+        """Парсит ИНН и адрес организации с RusProfile.ru с валидацией названия
         
         Args:
             company_name: Название организации для поиска
@@ -2520,16 +2567,12 @@ JSON:
         """
         if not company_name or not company_name.strip():
             return None, None
-        
-        # Проверяем кеш
-        cache_key = company_name.strip().lower()
-        if cache_key in DocumentProcessor._rusprofile_cache:
-            print(f"[RUSPROFILE] Взято из кеша для '{company_name}'")
-            return DocumentProcessor._rusprofile_cache[cache_key]
             
         try:
-            # Рандомный User-Agent для обхода защиты от ботов
+            # Импорты внутри метода, чтобы не засорять глобальную область, если они нужны только тут
             import random
+            import difflib
+            
             user_agents = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -2558,143 +2601,158 @@ JSON:
             session = requests.Session()
             session.headers.update(headers)
             
-            # Человеческая задержка перед началом
-            time.sleep(random.uniform(0.5, 1.5))
+            # Функция нормализации для сравнения названий
+            def normalize_name_for_compare(name: str) -> str:
+                if not name: return ""
+                n = name.lower()
+                # Удаляем ОПФ
+                for entity in ["ооо", "пао", "ао", "зао", "мкк", "мфк", "мфо", "пко", "нко", "банк", "кб"]:
+                     n = re.sub(r'\b' + entity + r'\b', '', n)
+                # Удаляем кавычки и спецсимволы
+                n = re.sub(r'["«»]', ' ', n)
+                # Удаляем все кроме букв и цифр (опционально, но помогает)
+                # n = re.sub(r'[^a-zа-я0-9\s]', '', n)
+                return " ".join(n.split())
+
+            normalized_query = normalize_name_for_compare(company_name)
             
-            # 1️⃣ Поиск - получаем список результатов
+            # Рандомная задержка перед запросом
+            time.sleep(random.uniform(1.0, 2.5))
+            
             search_url = f"https://www.rusprofile.ru/search?query={quote_plus(company_name)}"
-            response = session.get(search_url, timeout=15, allow_redirects=True)
-            response.raise_for_status()
+            response = session.get(search_url, timeout=20, allow_redirects=True)
             
-            # Человеческая задержка после запроса (1.5-3 секунды)
-            time.sleep(random.uniform(1.5, 3.0))
-            
+            if response.status_code != 200:
+                print(f"[RUSPROFILE] Ошибка при поиске '{company_name}': статус {response.status_code}")
+                return None, None
+                
             html = response.text
             soup = BeautifulSoup(html, "lxml")
             
-            inn = None
-            address = None
+            # Проверка на антибот / капчу
+            page_title = soup.title.get_text().lower() if soup.title else ""
+            if "ой" in page_title or "робот" in page_title or "captcha" in page_title:
+                print(f"[RUSPROFILE] Обнаружена капча для '{company_name}'")
+                return None, None
+
+            candidates = []
             
-            # 2️⃣ СПОСОБ 1: Пробуем взять из списка (первый результат)
-            item = soup.select_one("div.list-element")
-            if item:
-                # ИНН из списка
-                for span in item.select("div.list-element__row-info span"):
-                    m = re.search(r"ИНН[:\s]+(\d{10}|\d{12})", span.get_text())
-                    if m:
-                        inn = m.group(1)
-                        break
+            # 1. Если это страница списка результатов
+            items = soup.select("div.list-element")
+            if items:
+                for item in items:
+                    name_tag = item.select_one("a.list-element__title")
+                    if not name_tag: continue
+                    
+                    raw_name = name_tag.get_text(strip=True)
+                    normalized_name = normalize_name_for_compare(raw_name)
+                    
+                    # Считаем схожесть
+                    similarity = difflib.SequenceMatcher(None, normalized_query, normalized_name).ratio()
+                    
+                    # Извлекаем ИНН
+                    inn = None
+                    for info_block in item.select("div.list-element__row-info span"):
+                        text = info_block.get_text()
+                        if "ИНН" in text:
+                            m = re.search(r"(\d{10}|\d{12})", text)
+                            if m: inn = m.group(1)
+                    
+                    # Извлекаем Адрес
+                    address = None
+                    addr_tag = item.select_one("div.list-element__address")
+                    if addr_tag:
+                         address = addr_tag.get_text(strip=True)
+                         
+                    link = "https://www.rusprofile.ru" + name_tag["href"] if name_tag.get("href") else None
+                    
+                    candidates.append({
+                        "name": raw_name,
+                        "inn": inn,
+                        "address": address,
+                        "score": similarity,
+                        "url": link,
+                        "is_main_page": False
+                    })
+                    
+            # 2. Если нас сразу перекинуло на страницу компании (или только 1 результат)
+            # Признак страницы компании: есть h1 с itemprop="name" или id="clip_inn"
+            elif soup.select_one('[id^="clip_inn"]'):
+                h1 = soup.select_one("h1")
+                raw_name = h1.get_text(strip=True) if h1 else ""
+                normalized_name = normalize_name_for_compare(raw_name)
+                similarity = difflib.SequenceMatcher(None, normalized_query, normalized_name).ratio()
                 
-                # Адрес из списка
-                address_tag = item.select_one("div.list-element__address")
-                if address_tag:
-                    address = address_tag.get_text(strip=True)
-                
-                if inn or address:
-                    print(f"[RUSPROFILE] Найдено из списка для '{company_name}': ИНН={inn}, адрес={address}")
-                    DocumentProcessor._rusprofile_cache[cache_key] = (inn, address)
-                    return inn, address
-            
-            # 3️⃣ СПОСОБ 2: Идём в карточку компании
-            link = soup.select_one("a.list-element__title")
-            if link and link.get("href"):
-                card_url = "https://www.rusprofile.ru" + link["href"]
-                
-                # Обновляем Referer для имитации перехода по ссылке
-                session.headers.update({
-                    "Referer": search_url,
-                    "Sec-Fetch-Site": "same-origin",
-                })
-                
-                # Человеческая задержка перед переходом (1-2 секунды)
-                time.sleep(random.uniform(1.0, 2.0))
-                
-                card_response = session.get(card_url, timeout=15, allow_redirects=True)
-                card_response.raise_for_status()
-                
-                # Человеческая задержка после загрузки карточки
-                time.sleep(random.uniform(0.8, 1.5))
-                
-                card_html = card_response.text
-                card_soup = BeautifulSoup(card_html, "lxml")
-                
-                # ИНН с карточки
-                inn_tag = card_soup.select_one('[id^="clip_inn"]')
+                inn = None
+                inn_tag = soup.select_one('[id^="clip_inn"]')
                 if inn_tag:
-                    text = inn_tag.get_text(strip=True)
-                    if text.isdigit() and len(text) in (10, 12):
-                        inn = text
+                    inn = inn_tag.get_text(strip=True)
                 
-                # Fallback regex для ИНН
-                if not inn:
-                    m = re.search(r"ИНН[:\s]+(\d{10}|\d{12})", card_html)
-                    if m:
-                        inn = m.group(1)
-                
-                # Адрес с карточки
-                address_tag = card_soup.select_one("#clip_address")
-                if address_tag:
-                    address = address_tag.get_text(" ", strip=True)
-                
-                if inn or address:
-                    print(f"[RUSPROFILE] Найдено из карточки для '{company_name}': ИНН={inn}, адрес={address}")
-                    DocumentProcessor._rusprofile_cache[cache_key] = (inn, address)
-                    return inn, address
-            
-            # 4️⃣ СПОСОБ 3: Прямой редирект / карточка
-            # Пробуем парсить как карточку
-            inn_tag = soup.select_one('[id^="clip_inn"]')
-            if inn_tag:
-                text = inn_tag.get_text(strip=True)
-                if text.isdigit() and len(text) in (10, 12):
-                    inn = text
-            
-            if not inn:
-                m = re.search(r"ИНН[:\s]+(\d{10}|\d{12})", html)
-                if m:
-                    inn = m.group(1)
-            
-            address_tag = soup.select_one("#clip_address")
-            if address_tag:
-                address = address_tag.get_text(" ", strip=True)
-            
-            if inn or address:
-                print(f"[RUSPROFILE] Найдено (прямой редирект) для '{company_name}': ИНН={inn}, адрес={address}")
-                # Сохраняем в кеш
-                DocumentProcessor._rusprofile_cache[cache_key] = (inn, address)
-                return inn, address
-            
-            # 5️⃣ СПОСОБ 4: Вторая попытка - парсим по тексту в кавычках
-            # Пример: ООО ПКО «АйДи Коллект» -> АйДи Коллект
-            match = re.search(r'[«"](.*?)[»"]', company_name)
-            if match:
-                short_name = match.group(1).strip()
-                if short_name and short_name != company_name:
-                    print(f"[RUSPROFILE] Первая попытка не удалась, пробую по названию в кавычках: '{short_name}'")
+                address = None
+                addr_tag = soup.select_one("#clip_address")
+                if addr_tag:
+                    address = addr_tag.get_text(" ", strip=True) # preserve spaces
                     
-                    # Проверяем кеш для короткого имени
-                    short_cache_key = short_name.lower()
-                    if short_cache_key in DocumentProcessor._rusprofile_cache:
-                        result = DocumentProcessor._rusprofile_cache[short_cache_key]
-                        DocumentProcessor._rusprofile_cache[cache_key] = result
-                        return result
-                    
-                    # Рекурсивный вызов с коротким именем
-                    inn, address = DocumentProcessor.parse_inn_and_address_from_rusprofile(short_name)
-                    if inn or address:
-                        # Сохраняем в кеш под обоими ключами
-                        DocumentProcessor._rusprofile_cache[cache_key] = (inn, address)
-                        DocumentProcessor._rusprofile_cache[short_cache_key] = (inn, address)
-                        return inn, address
+                candidates.append({
+                    "name": raw_name,
+                    "inn": inn,
+                    "address": address,
+                    "score": similarity,
+                    "url": response.url,
+                    "is_main_page": True
+                })
+
+            if not candidates:
+                print(f"[RUSPROFILE] Ничего не найдено для '{company_name}'")
+                return None, None
+                
+            # Сортируем: сначала по score (убыв), затем по наличию ИНН (чтобы не пустые)
+            candidates.sort(key=lambda x: (x["score"], 1 if x["inn"] else 0), reverse=True)
             
-            # Ничего не найдено - сохраняем пустой результат в кеш
-            DocumentProcessor._rusprofile_cache[cache_key] = (None, None)
+            best = candidates[0]
+            print(f"[RUSPROFILE] Лучший кандидат для '{company_name}': '{best['name']}' (score={best['score']:.2f})")
+            
+            # Порог уверенности. 
+            # Для точных названий score обычно > 0.9. Для сокращений может быть ниже.
+            # Если score низкий (< 0.6), считаем что не нашли.
+            if best["score"] < 0.6:
+                print(f"[RUSPROFILE] Слишком низкая схожесть ({best['score']:.2f}), пропускаем.")
+                return None, None
+            
+            # Если данных не хватает, идем на страницу карточки
+            if best["url"] and (not best["inn"] or not best["address"]) and not best["is_main_page"]:
+                # Дополнительная задержка перед переходом
+                time.sleep(random.uniform(1.5, 3.0))
+                
+                try:
+                    # Обновляем referer
+                    session.headers.update({"Referer": search_url})
+                    card_resp = session.get(best["url"], timeout=20)
+                    if card_resp.status_code == 200:
+                        card_soup = BeautifulSoup(card_resp.text, "lxml")
+                        
+                        # Достаем ИНН
+                        if not best["inn"]:
+                            inn_tag = card_soup.select_one('[id^="clip_inn"]')
+                            if inn_tag:
+                                best["inn"] = inn_tag.get_text(strip=True)
+                                
+                        # Достаем Адрес
+                        if not best["address"]:
+                            addr_tag = card_soup.select_one("#clip_address")
+                            if addr_tag:
+                                best["address"] = addr_tag.get_text(" ", strip=True)
+                except Exception as e:
+                    print(f"[RUSPROFILE] Не удалось открыть карточку {best['url']}: {e}")
+
+            # Финальная проверка целостности: должен быть ИНН (адреса иногда нет у ликвидированных)
+            if best["inn"]:
+                return best["inn"], best["address"]
+            
             return None, None
             
         except Exception as e:
-            print(f"[RUSPROFILE] Ошибка при парсинге для '{company_name}': {e}")
-            # Сохраняем ошибку в кеш (чтобы не пытаться снова)
-            DocumentProcessor._rusprofile_cache[cache_key] = (None, None)
+            print(f"[RUSPROFILE] Критическая ошибка парсинга для '{company_name}': {e}")
             return None, None
 
     @staticmethod
@@ -4246,7 +4304,8 @@ JSON:
         has_marriage = False
         if data_map:
             marriage_certs = data_map.get("свидетельство_о_браке", [])
-            if marriage_certs:
+            marriage_certs_new = data_map.get("свидетельство_о_заключении_брака", [])
+            if marriage_certs or marriage_certs_new:
                 has_marriage = True
 
         # Проверяем свидетельство о расторжении брака
@@ -6762,6 +6821,7 @@ JSON формат:
         passport_spouse = DocumentProcessor.select_first_entry(data_map, "паспорт_супруга")
         inn_spouse = DocumentProcessor.select_first_entry(data_map, "инн_супруга")
         snils_spouse = DocumentProcessor.select_first_entry(data_map, "снилс_супруга")
+        marriage_cert = DocumentProcessor.select_first_entry(data_map, "свидетельство_о_заключении_брака")
         
         # Дополнительные источники данных
         criminal_record = DocumentProcessor.select_first_entry(data_map, "справка_о_судимости")
@@ -6801,6 +6861,40 @@ JSON формат:
                 # Если уже есть скобки в ФИО - не добавляем повторно
                 if "(" not in owner_fio:
                     fio_with_maiden = f"{fio_parts[0]} ({devichya_familiya}) {' '.join(fio_parts[1:])}"
+
+        # === ПОПЫТКА ИЗВЛЕЧЬ ДАННЫЕ СУПРУГА ИЗ СВИДЕТЕЛЬСТВА О БРАКЕ ===
+        if not passport_spouse and marriage_cert and owner_fio:
+            print("[INFO] Паспорт супруга не найден, пробуем извлечь из свидетельства о браке...")
+            sp_fio_1 = marriage_cert.get("Супруг_ФИО")
+            sp_fio_2 = marriage_cert.get("Супруга_ФИО")
+            
+            # Определяем кто из них должник
+            debtor_is_husband = False
+            debtor_is_wife = False
+            
+            # Вспомогательная функция для сравнения
+            def _is_similar(a, b):
+                if not a or not b: return False
+                return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.85
+            
+            if sp_fio_1 and _is_similar(owner_fio, sp_fio_1):
+                debtor_is_husband = True
+            elif sp_fio_2 and _is_similar(owner_fio, sp_fio_2):
+                debtor_is_wife = True
+                
+            spouse_data = {}
+            if debtor_is_husband and sp_fio_2:
+                spouse_data["ФИО"] = sp_fio_2
+                spouse_data["Дата_рождения"] = marriage_cert.get("Супруга_Дата_рождения")
+                spouse_data["Место_рождения"] = marriage_cert.get("Супруга_Место_рождения")
+            elif debtor_is_wife and sp_fio_1:
+                spouse_data["ФИО"] = sp_fio_1
+                spouse_data["Дата_рождения"] = marriage_cert.get("Супруг_Дата_рождения")
+                spouse_data["Место_рождения"] = marriage_cert.get("Супруг_Место_рождения")
+
+            if spouse_data.get("ФИО"):
+                 print(f"[INFO] Извлечен супруг из свидетельства: {spouse_data['ФИО']}")
+                 passport_spouse = spouse_data
 
         # === ПОЛУЧЕНИЕ ИНН ===
         # Приоритет: документ ИНН > справка о судимости > налоговая > кредитные отчеты
