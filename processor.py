@@ -582,7 +582,7 @@ JSON:
 Пустые поля = null. Никаких комментариев."""
         },
         "егрн_выписка": {
-            "keywords": ["выписка из единого государственного реестра недвижимости", "егрн", "сведения из егрн", "кадастровый номер", "кадастровая стоимость", "объекта недвижимости", "сведения егрн", "реестр недвижимости", "росреестр", "единый государственный реестр недвижимости", "право собственности", "выписка росреестр", "недвижимости о правах отдельного лица", "имевшиеся имеющиеся", "объекты недвижимости", "филиал публично правовой компании", "росреестра по республике", "онлайн выписка из егрн"],
+            "keywords": ["выписка из единого государственного реестра недвижимости", "выписка из егрн", "егрн", "сведения из егрн", "кадастровый номер", "кадастровая стоимость", "объекта недвижимости", "сведения егрн", "реестр недвижимости", "росреестр", "единый государственный реестр недвижимости", "право собственности", "выписка росреестр", "недвижимости о правах отдельного лица", "имевшиеся имеющиеся", "объекты недвижимости", "филиал публично правовой компании", "росреестра по республике", "онлайн выписка из егрн"],
             "prompt": """Выписка из ЕГРН с ПОДРОБНЫМИ характеристиками объекта недвижимости.
 
 Может быть не только обычная выписка егрн, но и выписка егрн с 'Госуслуги', все равно извлекай недвижимость.
@@ -2676,23 +2676,52 @@ JSON:
                     })
                     
             # 2. Если нас сразу перекинуло на страницу компании (или только 1 результат)
-            # Признак страницы компании: есть h1 с itemprop="name" или id="clip_inn"
-            elif soup.select_one('[id^="clip_inn"]'):
+            # Признак страницы компании: есть h1 с itemprop="name", id="clip_inn" или заголовок "ООО ..." и блоки информации
+            elif soup.select_one('[id^="clip_inn"]') or (soup.select_one("h1") and "ООО" in soup.select_one("h1").get_text()) or soup.find(string=re.compile("ИНН")):
                 h1 = soup.select_one("h1")
                 raw_name = h1.get_text(strip=True) if h1 else ""
                 normalized_name = normalize_name_for_compare(raw_name)
                 similarity = difflib.SequenceMatcher(None, normalized_query, normalized_name).ratio()
                 
+                # ИНН
                 inn = None
                 inn_tag = soup.select_one('[id^="clip_inn"]')
                 if inn_tag:
                     inn = inn_tag.get_text(strip=True)
-                
+                else:
+                    # Fallback поиска ИНН по тексту
+                    inn_match = re.search(r'ИНН(?:/КПП)?\s*(\d{10}|\d{12})', html)
+                    if inn_match:
+                        inn = inn_match.group(1)
+
+                # Адрес
                 address = None
                 addr_tag = soup.select_one("#clip_address")
                 if addr_tag:
-                    address = addr_tag.get_text(" ", strip=True) # preserve spaces
+                    # Чистим мусор (кнопки копирования и скрытые элементы)
+                    for dead in addr_tag.select(".copy_button, script, style"):
+                        dead.decompose()
                     
+                    # Берем текст без разделителей, чтобы "5" и "2" в <span class="long_copy"> склеились в "52"
+                    # Пример: ...помещ. 5<span class="long_copy">2</span> -> ...помещ. 52
+                    address = addr_tag.get_text(strip=True)
+                    
+                    # Восстанавливаем пробелы после запятых, если они пропали
+                    # "119330,Москва" -> "119330, Москва"
+                    address = re.sub(r',(?=\S)', ', ', address)
+                else:
+                     # Fallback поиска Адреса по тексту (ищем после "Юридический адрес")
+                    addr_block = soup.find(string=re.compile("Юридический адрес"))
+                    if addr_block:
+                         # Обычно адрес идет в следующем теге или рядом
+                         parent = addr_block.find_parent("div") or addr_block.find_parent("span")
+                         if parent:
+                             full_text = parent.get_text(" ", strip=True)
+                             # Пытаемся вытянуть адрес (иногда он в <address> или просто текстом)
+                             address = full_text.replace("Юридический адрес", "").strip() 
+                             # Удаляем лишние пометки
+                             address = address.split("Сведения об адресе недостоверны")[0].strip()
+
                 candidates.append({
                     "name": raw_name,
                     "inn": inn,
