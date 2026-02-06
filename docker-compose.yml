@@ -12,7 +12,7 @@ services:
     # Ограничения ресурсов
     mem_limit: 7g
     mem_reservation: 4g
-    cpus: 2
+    # cpus: 2
     volumes:
       # Сохраняем данные между перезапусками
       - ./uploads:/app/uploads

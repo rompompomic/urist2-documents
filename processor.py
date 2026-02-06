@@ -3301,12 +3301,13 @@ JSON:
         }
 
     @staticmethod
-    def calculate_bank_accounts(data_list: List[Dict[str, Any]]) -> Optional[int]:
+    def calculate_bank_accounts(data_list: List[Dict[str, Any]]) -> int:
+        total_accounts = 0
         for data in data_list:
             accounts = data.get("Счета") or []
             if isinstance(accounts, list):
-                return len(accounts)
-        return None
+                total_accounts += len(accounts)
+        return total_accounts
 
     @staticmethod
     def describe_real_estate(data_list: List[Dict[str, Any]]) -> str:

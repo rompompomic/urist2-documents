@@ -38,6 +38,7 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000')"
 
-# Запуск через Gunicorn (1 воркер чтобы избежать проблем с синхронизацией реестров в памяти)
-# Увеличенный таймаут для обработки больших документов (1 час = 3600 секунд)
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "3600", "--graceful-timeout", "3600", "--access-logfile", "-", "--error-logfile", "-", "wsgi:app"]
+# Запуск через Gunicorn с поддержкой потоков (gthread)
+# Используем threads=4, чтобы воркер не блокировался полностью на долгих задачах и отвечал на Healthcheck
+# workers=1 оставлен для единого пространства памяти (реестры)
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--worker-class", "gthread", "--workers", "1", "--threads", "4", "--timeout", "3600", "--graceful-timeout", "3600", "--access-logfile", "-", "--error-logfile", "-", "wsgi:app"]
