@@ -956,6 +956,9 @@ JSON:
             "keywords": ["кредитный отчет", "окб", "объединенное кредитное бюро", "объединенного кредитного бюро", "кредитная история", "отчет окб", "бюро кредитных историй"],
             "prompt": """
 
+ВАЖНОЕ ЗАМЕЧАНИЕ! НЕ НУЖНО ОТДЕЛЬНО БРАТЬ "Общая задолженность" и "Просроченная задолженность" КАК ОТДЕЛЬНЫЕ КРЕДИТЫ. ЭТО ОДИН И ТОТ ЖЕ КРЕДИТ!!! "Общая задолженность" НУЖНО ВЗЯТЬ ТОЛЬКО ЭТО!
+    - Короче, запрещено брать данные из двух столбцов и указывать их как два договора, берем только "Общая задолженность"
+
 СНАЧАЛА найди ИНН должника на первой странице отчета (это 12-значное число физического лица). В разделе "СУБЪЕКТ КРЕДИТНОЙ ИСТОРИИ".
 
 Найди таблицу "ДЕЙСТВУЮЩИЕ КРЕДИТНЫЕ ДОГОВОРЫ" или "АКТИВНЫЕ ДОГОВОРЫ", когда наткнешься на таблицу "ЗАКРЫТЫЕ КРЕДИТНЫЕ ДОГОВОРЫ", начинай игнорировать договоры и не учитывать их.
@@ -1008,7 +1011,7 @@ JSON:
       "Вид": "тип кредита (Потребительский кредит/Кредитная карта/Микрозайм/Ипотека/Автокредит/другое)",
       "Дата_сделки": "ДД.ММ.ГГГГ ('Дата возникновения обязательства'. НЕ 'Статус платежа')",
       "Сумма_обязательства": "первоначальная сумма",
-      "Сумма": "значение из столбца 'Общая задолженность'"
+      "Сумма": "значение из столбца 'начОбщая задолженность'"
     }}
   ],
   "Судебные_акты": [
@@ -2351,15 +2354,42 @@ JSON:
         if not name:
             return ""
         
-        # 1. Убираем префикс "МФО: " и похожие
         result = name.strip()
+        
+        # 0. ИСПРАВЛЕНИЕ БАГА: "Специализированное финан. общество: ..." -> "ООО СФО ..."
+        # ПРИМЕР: Специализированное финан. общество: ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ СФО ПБ СЕРВИС ФИНАНС
+        if "Специализированное финан. общество" in result:
+             result = result.replace("Специализированное финан. общество:", "").strip()
+             result = result.replace("Специализированное финан. общество", "").strip()
+
+        # 1. Замена полных форм ОПФ на сокращенные (ДО очистки префиксов)
+        replacements = [
+            (r'ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ', 'ООО'),
+            (r'ПУБЛИЧНОЕ АКЦИОНЕРНОЕ ОБЩЕСТВО', 'ПАО'),
+            (r'АКЦИОНЕРНОЕ ОБЩЕСТВО', 'АО'),
+            (r'ЗАКРЫТОЕ АКЦИОНЕРНОЕ ОБЩЕСТВО', 'ЗАО'),
+            (r'МИКРОКРЕДИТНАЯ КОМПАНИЯ', 'МКК'),
+            (r'МИКРОФИНАНСОВАЯ КОМПАНИЯ', 'МФК'),
+            (r'СПЕЦИАЛИЗИРОВАННОЕ ФИНАНСОВОЕ ОБЩЕСТВО', 'СФО'),
+        ]
+        
+        for full, short in replacements:
+            result = re.sub(r'\b' + full + r'\b', short, result, flags=re.IGNORECASE)
+
+        # 1.1 Исправление известных опечаток OCR / Парсинга
+        # "ДЗП-Единый" часто путают, пользователь просит ДЭП (если это действительно ошибка парсинга)
+        # Но если название реально ДЗП (Доступные Займы), то... 
+        # Пользователь написал: "Какой нахуй ДЗП, это дэп". Значит он хочет видеть ДЭП.
+        if "ДЗП-Единый" in result:
+             result = result.replace("ДЗП-Единый", "ДЭП-Единый")
+
+        # 2. Убираем префикс "МФО: " и похожие
         for prefix in ["МФО:", "Мфо:", "МФО :", "Мфо :", "Банк: ", "БАНК: ", "Банк :", "БАНК :"]:
             if result.startswith(prefix):
                 result = result[len(prefix):].strip()
         
         # 2. Убираем историю переименований в скобках (ранее - ...)
         # Ищем последнюю открывающую скобку с текстом "ранее"
-        import re
         result = re.sub(r'\s*\(ранее[^)]*\)\s*', ' ', result, flags=re.IGNORECASE)
         
         # 3. Нормализуем кавычки: '' "" → «»
@@ -2559,41 +2589,38 @@ JSON:
             def normalize_name_for_compare(name: str) -> str:
                 if not name: return ""
                 n = name.lower()
-                # Удаляем ОПФ
+                # Удаляем длинные ОПФ first
+                for entity in ["общество с ограниченной ответственностью", "акционерное общество", "публичное акционерное общество", "специализированное финансовое общество", "специализированное финан. общество", "сфо"]:
+                     n = re.sub(r'\b' + re.escape(entity) + r'\b', '', n)
+                
+                # Удаляем короткие ОПФ
                 for entity in ["ооо", "пао", "ао", "зао", "мкк", "мфк", "мфо", "пко", "нко", "банк", "кб"]:
                      n = re.sub(r'\b' + entity + r'\b', '', n)
-                # Удаляем кавычки и спецсимволы
-                n = re.sub(r'["«»]', ' ', n)
-                # Удаляем все кроме букв и цифр (опционально, но помогает)
-                # n = re.sub(r'[^a-zа-я0-9\s]', '', n)
+                     
+                # Удаляем кавычки, скобки и спецсимволы
+                n = re.sub(r'["«»\(\)]', ' ', n)
+                
+                # Удаляем "грязные" суффиксы типа ))
+                n = n.replace("))", "")
+                
                 return " ".join(n.split())
 
-            def try_fallback():
-                if _depth >= 2: return None, None
-                
-                short_name = None
-                qt_match = re.search(r'[«"](.*?)[»"]', company_name)
-                if qt_match:
-                    short_name = qt_match.group(1).strip()
-                    if short_name and short_name != company_name:
-                        print(f"[RUSPROFILE] Попытка повторного поиска (short): '{short_name}'")
-                        res = DocumentProcessor.parse_inn_and_address_from_rusprofile(short_name, _depth=_depth + 1)
-                        if res != (None, None): return res
-                
-                target = short_name if short_name else company_name
-                split_name = re.sub(r'(?<=[a-zа-я])(?=[A-ZА-Я])', ' ', target)
-                if split_name != target:
-                    print(f"[RUSPROFILE] Попытка повторного поиска (split): '{split_name}'")
-                    res = DocumentProcessor.parse_inn_and_address_from_rusprofile(split_name, _depth=_depth + 1)
-                    if res != (None, None): return res
-                return None, None
-
-            normalized_query = normalize_name_for_compare(company_name)
+            # Очищаем имя ПЕРЕД поиском
+            clean_search_query = company_name
+            # Убираем явно мусорные префиксы/суффиксы, которые ломают поиск RusProfile
+            clean_search_query = re.sub(r'^Специализированное финан\. общество:\s*', '', clean_search_query, flags=re.IGNORECASE)
+            clean_search_query = re.sub(r'^ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ\s*', '', clean_search_query, flags=re.IGNORECASE)
+            # Убираем скобки с конца
+            clean_search_query = re.sub(r'\)\)+$', '', clean_search_query) 
+            
+            normalized_query = normalize_name_for_compare(clean_search_query)
             
             # Рандомная задержка перед запросом
             time.sleep(random.uniform(1.0, 2.5))
             
-            search_url = f"https://www.rusprofile.ru/search?query={quote_plus(company_name)}"
+            # Используем очищенный запрос
+            print(f"[RUSPROFILE] Поиск по запросу: '{clean_search_query}' (orig: '{company_name}')")
+            search_url = f"https://www.rusprofile.ru/search?query={quote_plus(clean_search_query)}"
             response = session.get(search_url, timeout=20, allow_redirects=True)
             
             if response.status_code != 200:
@@ -2618,7 +2645,15 @@ JSON:
                     name_tag = item.select_one("a.list-element__title")
                     if not name_tag: continue
                     
-                    raw_name = name_tag.get_text(strip=True)
+                    # RusProfile выделяет совпадения тегом <mark>, text(strip=True) склеит их
+                    # <mark>OOO</mark> <mark>"..."</mark> -> OOO"..."
+                    # Добавим пробелы вокруг mark перед извлечением
+                    for mark in name_tag.select("mark"):
+                        mark.insert_before(" ")
+                        mark.insert_after(" ")
+
+                    raw_name = name_tag.get_text(separator=" ", strip=True)
+                    # Чистим лишние пробелы и кавычки для сравнения
                     normalized_name = normalize_name_for_compare(raw_name)
                     
                     # Считаем схожесть
@@ -2636,7 +2671,7 @@ JSON:
                     address = None
                     addr_tag = item.select_one("div.list-element__address")
                     if addr_tag:
-                         address = addr_tag.get_text(strip=True)
+                         address = addr_tag.get_text(separator=" ", strip=True)
                          
                     link = "https://www.rusprofile.ru" + name_tag["href"] if name_tag.get("href") else None
                     
@@ -2673,16 +2708,22 @@ JSON:
                 addr_tag = soup.select_one("#clip_address")
                 if addr_tag:
                     # Чистим мусор (кнопки копирования и скрытые элементы)
-                    for dead in addr_tag.select(".copy_button, script, style"):
+                    for dead in addr_tag.select(".copy_button, script, style, meta"):
                         dead.decompose()
+
+                    # Обрабатываем "разорванные" номера домов/помещений типа 5<span class="long_copy">2</span>
+                    # Нужно удалить теги span, но оставить их текст
+                    # BS4 unwrap() делает это
+                    for span in addr_tag.find_all("span", class_="long_copy"):
+                         span.unwrap()
                     
-                    # Берем текст без разделителей, чтобы "5" и "2" в <span class="long_copy"> склеились в "52"
-                    # Пример: ...помещ. 5<span class="long_copy">2</span> -> ...помещ. 52
-                    address = addr_tag.get_text(strip=True)
+                    # Теперь у нас чистый HTML без разрыва слов, можно брать get_text
+                    # Используем separator=" " на случай, если части адреса в разных блоках
+                    address = addr_tag.get_text(separator=" ", strip=True)
                     
-                    # Восстанавливаем пробелы после запятых, если они пропали
-                    # "119330,Москва" -> "119330, Москва"
-                    address = re.sub(r',(?=\S)', ', ', address)
+                    # Чистим множественные пробелы и восстанавливаем запятые
+                    address = re.sub(r'\s+', ' ', address)
+                    address = re.sub(r'\s*,\s*', ', ', address)
                 else:
                      # Fallback поиска Адреса по тексту (ищем после "Юридический адрес")
                     addr_block = soup.find(string=re.compile("Юридический адрес"))
@@ -2707,7 +2748,7 @@ JSON:
 
             if not candidates:
                 print(f"[RUSPROFILE] Ничего не найдено для '{company_name}'")
-                return try_fallback()
+                return None, None
                 
             # Сортируем: сначала по score (убыв), затем по наличию ИНН (чтобы не пустые)
             candidates.sort(key=lambda x: (x["score"], 1 if x["inn"] else 0), reverse=True)
@@ -2720,7 +2761,7 @@ JSON:
             # Если score низкий (< 0.6), считаем что не нашли.
             if best["score"] < 0.6:
                 print(f"[RUSPROFILE] Слишком низкая схожесть ({best['score']:.2f}), пропускаем.")
-                return try_fallback()
+                return None, None
             
             # Если данных не хватает, идем на страницу карточки
             if best["url"] and (not best["inn"] or not best["address"]) and not best["is_main_page"]:
@@ -6678,7 +6719,6 @@ JSON формат:
             return "Арбитражный суд"
 
     @staticmethod
-    @staticmethod
     def format_attachments(pdf_paths: List[Path], openai_client=None) -> str:
         """Форматирует список приложений из файлов через GPT.
         
@@ -6742,6 +6782,7 @@ JSON формат:
                 "4. Список кредиторов и должников",
                 "5. Опись имущества"
             ]
+            
             counter = 6
             for doc in unique_docs:
                 needs_copy = "квитанц" not in doc.lower()
@@ -6750,7 +6791,8 @@ JSON формат:
                 else:
                     attachments.append(f"{counter}. {doc}")
                 counter += 1
-            return "\n".join(attachments)
+
+            return "{{LINE_BREAK}}".join(attachments)
         
         # Формируем промпт для GPT
         docs_list = "\n".join([f"- {doc}" for doc in unique_docs])
@@ -6774,9 +6816,9 @@ JSON формат:
 4. Нумерация должна быть сквозной (1, 2, 3... без пропусков)
 
 ПРИМЕРЫ:
-- "Паспорт" → "6. Копия Паспорт"
-- "Справка о задолженности — 3 шт." → "7. Копия Справка о задолженности — 3 шт."
-- "Почтовая квитанция" → "8. Почтовая квитанция" (БЕЗ "Копия")
+- "Копия Паспорт" -> "6. Копия Паспорт"
+- "Справка о задолженности — 3 шт." -> "7. Копия Справка о задолженности — 3 шт."
+- "Почтовая квитанция" -> "8. Почтовая квитанция" (БЕЗ "Копия")
 
 Верни только готовый пронумерованный список, без комментариев."""
 
@@ -6789,7 +6831,7 @@ JSON формат:
             )
             
             result = response.choices[0].message.content.strip()
-            return result
+            return result.replace("\n", "{{LINE_BREAK}}")
             
         except Exception as e:
             print(f"[ERROR] Failed to format attachments with GPT: {e}")
@@ -6809,7 +6851,7 @@ JSON формат:
                 else:
                     attachments.append(f"{counter}. {doc}")
                 counter += 1
-            return "\n".join(attachments)
+            return "{{LINE_BREAK}}".join(attachments)
 
     @staticmethod
     def prepare_template_context(data_map: Dict[str, List[Dict[str, Any]]], pdf_paths: Optional[List[Path]] = None, openai_client=None) -> Dict[str, str]:
@@ -7463,6 +7505,24 @@ JSON формат:
         """Заполняет Word шаблон с поддержкой динамических таблиц (Jinja2)."""
         doc = DocxTemplate(template_path)
 
+        # Обрабатываем Приложения, превращая переносы строк в Soft Breaks (<w:br/>) через RichText
+        if "Приложения" in context and isinstance(context["Приложения"], str):
+            text = context["Приложения"]
+            if "\n" in text or "{{LINE_BREAK}}" in text:
+                try:
+                    text_norm = text.replace("{{LINE_BREAK}}", "\n").strip()
+                    lines = [line.strip() for line in text_norm.split('\n') if line.strip()]
+                    
+                    rt = RichText()
+                    for i, line in enumerate(lines):
+                        rt.add(line)
+                        if i < len(lines) - 1:
+                            rt.add('\n') # \n в RichText = <w:br/> (Shift+Enter)
+                    
+                    context["Приложения"] = rt
+                except Exception as e:
+                    print(f"      [WARNING] Error converting Attachments to RichText: {e}")
+
         # Рендерим шаблон с контекстом
         doc.render(context)
 
@@ -8092,6 +8152,9 @@ JSON формат:
                         
                         batch_prompt = base_prompt + overlap_info + f"""
 
+ВАЖНОЕ ЗАМЕЧАНИЕ! НЕ НУЖНО ОТДЕЛЬНО БРАТЬ "Общая задолженность" и "Просроченная задолженность" КАК ОТДЕЛЬНЫЕ КРЕДИТЫ. ЭТО ОДИН И ТОТ ЖЕ КРЕДИТ!!! "Общая задолженность" НУЖНО ВЗЯТЬ ТОЛЬКО ЭТО!
+    - Короче, запрещено брать данные из двух столбцов и указывать их как два договора, берем только "Общая задолженность"
+
 СНАЧАЛА найди ИНН должника на первой странице отчета (это 12-значное число физического лица). В разделе "СУБЪЕКТ КРЕДИТНОЙ ИСТОРИИ".
 
 Найди таблицу "ДЕЙСТВУЮЩИЕ КРЕДИТНЫЕ ДОГОВОРЫ" или "АКТИВНЫЕ ДОГОВОРЫ", когда наткнешься на таблицу "ЗАКРЫТЫЕ КРЕДИТНЫЕ ДОГОВОРЫ", начинай игнорировать договоры и не учитывать их.
@@ -8144,7 +8207,7 @@ JSON:
       "Вид": "тип кредита (Потребительский кредит/Кредитная карта/Микрозайм/Ипотека/Автокредит/другое)",
       "Дата_сделки": "ДД.ММ.ГГГГ ('Дата возникновения обязательства'. НЕ 'Статус платежа')",
       "Сумма_обязательства": "первоначальная сумма",
-      "Сумма": "значение из столбца 'Общая задолженность'"
+      "Сумма": "Общая задолженность"
     }}
   ],
   "Судебные_акты": [
@@ -8427,6 +8490,9 @@ JSON (СТРОГО этот формат):
                 if doc_type == "отчет_окб":
                     simple_prompt = base_prompt + f"""
 
+ВАЖНОЕ ЗАМЕЧАНИЕ! НЕ НУЖНО ОТДЕЛЬНО БРАТЬ "Общая задолженность" и "Просроченная задолженность" КАК ОТДЕЛЬНЫЕ КРЕДИТЫ. ЭТО ОДИН И ТОТ ЖЕ КРЕДИТ!!! "Общая задолженность" НУЖНО ВЗЯТЬ ТОЛЬКО ЭТО!
+    - Короче, запрещено брать данные из двух столбцов и указывать их как два договора, берем только "Общая задолженность"
+
 СНАЧАЛА найди ИНН должника на первой странице отчета (это 12-значное число физического лица). В разделе "СУБЪЕКТ КРЕДИТНОЙ ИСТОРИИ".
 
 Найди таблицу "ДЕЙСТВУЮЩИЕ КРЕДИТНЫЕ ДОГОВОРЫ" или "АКТИВНЫЕ ДОГОВОРЫ", когда наткнешься на таблицу "ЗАКРЫТЫЕ КРЕДИТНЫЕ ДОГОВОРЫ", начинай игнорировать договоры и не учитывать их.
@@ -8479,7 +8545,7 @@ JSON:
       "Вид": "тип кредита (Потребительский кредит/Кредитная карта/Микрозайм/Ипотека/Автокредит/другое)",
       "Дата_сделки": "ДД.ММ.ГГГГ ('Дата возникновения обязательства'. НЕ 'Статус платежа')",
       "Сумма_обязательства": "первоначальная сумма",
-      "Сумма": "значение из столбца 'Общая задолженность'"
+      "Сумма": "Общая задолженность"
     }}
   ],
   "Судебные_акты": [
