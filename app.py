@@ -704,7 +704,12 @@ def save_debtor_data_only(debtor_id):
         fio_changed = 'ФИО' in new_data and new_data['ФИО'] != current_data.get('ФИО')
         devichya_changed = 'Девичья_фамилия' in new_data and new_data.get('Девичья_фамилия') != current_data.get('Девичья_фамилия')
         
-        # Если ФИО изменилось ИЛИ появилась/изменилась девичья фамилия, генерируем все производные поля через нейронку
+        # Проверяем изменение Адреса регистрации
+        address_changed = 'Адрес_регистрации' in new_data and new_data['Адрес_регистрации'] != current_data.get('Адрес_регистрации')
+
+        from processor import DocumentProcessor
+
+        # Если ФИО изменилось ИЛИ появилась/изменилась девичья фамилия
         if fio_changed or devichya_changed:
             # Берем актуальные значения (новые или текущие)
             fio_value = new_data.get('ФИО') or current_data.get('ФИО')
@@ -712,14 +717,60 @@ def save_debtor_data_only(debtor_id):
             
             if fio_value:  # Генерируем только если есть ФИО
                 print(f"[SAVE_DATA] ФИО or Девичья_фамилия changed, generating derivative fields via OpenAI...")
-                print(f"[SAVE_DATA] ФИО: {fio_value}, Девичья: {devichya_value}")
                 fio_fields = generate_fio_fields(fio_value, devichya_value)
-                
-                # Добавляем сгенерированные поля к данным для обновления
                 new_data.update(fio_fields)
-                print(f"[SAVE_DATA] Generated fields: {list(fio_fields.keys())}")
         
-        # Обновляем только переданные поля
+        # Если Адрес изменился - пересчитываем компоненты и суд
+        if address_changed:
+            new_address = new_data['Адрес_регистрации']
+            print(f"[SAVE_DATA] Address changed to '{new_address}', re-parsing components...")
+            
+            # 1. Парсим компоненты адреса
+            # Используем обычный парсер, т.к. GPT клиент здесь недоступен/сложно получить
+            # Или можно попробовать импортировать клиент если он настроен
+            адрес_части = DocumentProcessor.parse_address(new_address)
+            
+            # Обновляем поля компонентов
+            new_data.update({
+                "Субъект_прописка": адрес_части.get("субъект", ""),
+                "Район_прописка": адрес_части.get("район", ""),
+                "Города_прописка": адрес_части.get("город", ""),
+                "Населенный_пункт_прописка": адрес_части.get("населенный_пункт", ""),
+                "Улица_прописка": адрес_части.get("улица", ""),
+                "Номер_дома_прописка": адрес_части.get("дом", ""),
+                "Номер_корпуса_прописка": адрес_части.get("корпус", ""),
+                "Номер_квартиры_прописка": адрес_части.get("квартира", ""),
+            })
+            
+            # 2. Обновляем Арбитражный суд
+            new_court = DocumentProcessor.get_arbitration_court(new_address)
+            new_data["Арбитражный_суд"] = new_court
+            print(f"[SAVE_DATA] Updated court to: {new_court}")
+
+            # 3. Обновляем адрес во внутренних таблицах (credits, vehicles, etc)
+            # Это важно для динамических шаблонов, которые могут использовать поле из строки
+            
+            # Обновляем в таблице кредиторов
+            if "credits" in current_data:
+                for row in current_data["credits"]:
+                    if isinstance(row, dict):
+                        row["Адрес_регистрации_должника"] = new_address
+            # Если credits пришли в new_data (редко, но возможно)
+            if "credits" in new_data:
+                for row in new_data["credits"]:
+                    if isinstance(row, dict):
+                        row["Адрес_регистрации_должника"] = new_address
+            
+            # Аналогично можно обновить в других таблицах если там есть адрес должника
+            # В Описи имущества (realty) адрес владельца обычно не хранится построчно, 
+            # но если шаблон использует {{ Адрес_регистрации }} из корня контекста, 
+            # то обновление через new_data['Адрес_регистрации'] должно сработать (но только для простых полей).
+            
+            # ВАЖНО: Если данные хранятся в current_data (credits), мы должны обновить их ТАМ,
+            # так как new_data просто накладывается сверху.
+            # Поэтому мы обновляем current_data['credits'] выше.
+
+        # Обновляем только переданные поля (merge)
         current_data.update(new_data)
         
         # Normalize LINE_BREAK placeholders before saving
