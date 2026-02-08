@@ -2564,6 +2564,9 @@ JSON:
             # Импорты внутри метода, чтобы не засорять глобальную область, если они нужны только тут
             import random
             import difflib
+            import requests
+            from requests.utils import quote_plus
+            from bs4 import BeautifulSoup
             
             user_agents = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -2620,6 +2623,10 @@ JSON:
             clean_search_query = re.sub(r'^ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ\s*', '', clean_search_query, flags=re.IGNORECASE)
             # Убираем кавычки из поискового запроса для лучшего матчинга
             clean_search_query = re.sub(r'["\'«»]', '', clean_search_query)
+            
+            # Убираем ООО, АО, ПАО из начала строки для чистоты, если они остались
+            clean_search_query = re.sub(r'^(ООО|АО|ПАО|ЗАО|МКК|МФК|МФО)\s+', '', clean_search_query, flags=re.IGNORECASE)
+
             # Убираем скобки с конца
             clean_search_query = re.sub(r'\)\)+$', '', clean_search_query) 
             
@@ -2804,8 +2811,9 @@ JSON:
                 DocumentProcessor._rusprofile_cache[company_name] = (best["inn"], best.get("address"))
                 return best["inn"], best["address"]
             
-            # Кешируем отрицательный результат
-            DocumentProcessor._rusprofile_cache[company_name] = (None, None)
+            # ОТКЛЮЧАЕМ КЕШИРОВАНИЕ ОТРИЦАТЕЛЬНЫХ РЕЗУЛЬТАТОВ
+            # Чтобы при повторном запуске мы снова попытались найти
+            # DocumentProcessor._rusprofile_cache[company_name] = (None, None)
             return None, None
             
         except Exception as e:
@@ -4775,6 +4783,12 @@ JSON:
             elif len(found_inn) not in [10, 12]:
                  print(f"[DEBUG_INN] ИНН из документа странной длины ({len(found_inn)}), перепроверяем: {found_inn}")
                  should_check_rusprofile = True
+            
+            # ФИЛЬТР: Если найденный ИНН совпадает с ИНН должника - это ошибка парсинга парсера
+            if found_inn and str(found_inn) == str(debtor_inn):
+                 print(f"[DEBUG_INN] Найденный ИНН совпадает с ИНН должника ({found_inn}). Ищем реальный ИНН кредитора...")
+                 should_check_rusprofile = True
+                 found_inn = None
 
             if should_check_rusprofile:
                 print(f"[DEBUG_INN] ИНН не найден или вызывает сомнения, ищу в реестре/RusProfile для '{кредитор_display}'...")
@@ -4797,10 +4811,10 @@ JSON:
                     cr["ИНН_кредитора"] = raw_inn
             
             # Формируем отображаемую строку
-            инн_display = ""
+            inn_val_safe = ""
             if raw_inn:
-                инн_display = f"ИНН {raw_inn}"
-                print(f"[DEBUG_INN] ИНН с префиксом: {инн_display}")
+                inn_val_safe = f"ИНН {raw_inn}"
+                print(f"[DEBUG_INN] ИНН с префиксом: {inn_val_safe}")
 
             # Создаем отдельную строку для каждого договора
             for contract_idx, credit in enumerate(credits_list):
@@ -4826,13 +4840,13 @@ JSON:
                     "Кредитор": кредитор_display if is_first_contract else "",
                     
                     # ПРЯМОЕ СООТВЕТСТВИЕ: Используем ключи, скопированные из запроса пользователя
-                    "ИНН_кредитора": инн_display,
+                    "ИНН_кредитора": inn_val_safe,
                     
                     # Алиасы для подстраховки (разные варианты написания)
-                    "Инн_кредитора": инн_display,  
-                    "ИНН": инн_display,            
-                    "inn_creditor": инн_display,   # Латиница
-                    "Inn_creditor": инн_display,
+                    "Инн_кредитора": inn_val_safe,
+                    "ИНН": inn_val_safe,
+                    "inn_creditor": inn_val_safe,
+                    "Inn_creditor": inn_val_safe,
 
                     "Адрес_кредитора": адрес if is_first_contract else "",
                     "Дата_договора": дата_текст,
