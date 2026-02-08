@@ -58,7 +58,7 @@ class DocumentProcessor:
     """Processes PDF documents and aggregates structured data."""
     
     # Кеш для запросов к RusProfile: {company_name: (inn, address)}
-    _rusprofile_cache: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+    _rusprofile_cache: Dict[str, tuple[Optional[str], Optional[str]]] = {}
 
     def __init__(self) -> None:
         pass
@@ -2618,6 +2618,8 @@ JSON:
             # Убираем явно мусорные префиксы/суффиксы, которые ломают поиск RusProfile
             clean_search_query = re.sub(r'^Специализированное финан\. общество:\s*', '', clean_search_query, flags=re.IGNORECASE)
             clean_search_query = re.sub(r'^ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ\s*', '', clean_search_query, flags=re.IGNORECASE)
+            # Убираем кавычки из поискового запроса для лучшего матчинга
+            clean_search_query = re.sub(r'["\'«»]', '', clean_search_query)
             # Убираем скобки с конца
             clean_search_query = re.sub(r'\)\)+$', '', clean_search_query) 
             
@@ -4843,8 +4845,9 @@ JSON:
                     "Фамилия": debtor_fio.split()[0] if debtor_fio and len(debtor_fio.split()) > 0 else "",
                     "Имя": debtor_fio.split()[1] if debtor_fio and len(debtor_fio.split()) > 1 else "",
                     "Отчество": debtor_fio.split()[2] if debtor_fio and len(debtor_fio.split()) > 2 else "",
-                    "ИНН": debtor_inn, # Возвращаем имя переменной ИНН для должника (по просьбе пользователя)
-                    "Снилs": debtor_snils,
+                    "ИНН_должника": debtor_inn, # Явный ключ для должника
+                    # "ИНН": debtor_inn, # ОТКЛЮЧЕНО: Не перезаписываем ИНН кредитора ИНН должника. ИНН в строке кредита = ИНН кредитора
+                    "Снилс": debtor_snils,
                     "Адрес_регистрации_должника": debtor_address,
                 }
                 
@@ -4982,8 +4985,10 @@ JSON:
                 "Фамилия": debtor_fio.split()[0] if debtor_fio and len(debtor_fio.split()) > 0 else "",
                 "Имя": debtor_fio.split()[1] if debtor_fio and len(debtor_fio.split()) > 1 else "",
                 "Отчество": debtor_fio.split()[2] if debtor_fio and len(debtor_fio.split()) > 2 else "",
-                "ИНН": debtor_inn,
-                "Снилs": debtor_snils,
+                "ИНН_должника": debtor_inn,
+                # "ИНН": debtor_inn, # ОТКЛЮЧЕНО: Не перезаписываем ИНН кредитора
+                "Снилс": debtor_snils,
+                "ИНН": инн_display, # Добавляем ИНН кредитора как основной ИНН строки
                 "Адрес_регистрации_должника": debtor_address,
             })
             counter += 1
