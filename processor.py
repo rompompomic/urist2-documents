@@ -2631,8 +2631,9 @@ JSON:
             soup = BeautifulSoup(html, "lxml")
             
             # Проверка на антибот / капчу
+            # "Строй..." содержит "ой", поэтому простая проверка на "ой" дает ложные срабатывания
             page_title = soup.title.get_text().lower() if soup.title else ""
-            if "ой" in page_title or "робот" in page_title or "captcha" in page_title:
+            if "ой!" in page_title or "вы робот" in page_title or "captcha" in page_title or "доступ ограничен" in page_title:
                 print(f"[RUSPROFILE] Обнаружена капча для '{company_name}'")
                 return None, None
 
@@ -2756,12 +2757,10 @@ JSON:
             best = candidates[0]
             print(f"[RUSPROFILE] Лучший кандидат для '{company_name}': '{best['name']}' (score={best['score']:.2f})")
             
-            # Порог уверенности. 
-            # Для точных названий score обычно > 0.9. Для сокращений может быть ниже.
-            # Если score низкий (< 0.6), считаем что не нашли.
-            if best["score"] < 0.6:
-                print(f"[RUSPROFILE] Слишком низкая схожесть ({best['score']:.2f}), пропускаем.")
-                return None, None
+            # Пороговая проверка схожести отключена по требованию пользователя
+            # if best["score"] < 0.6:
+            #     print(f"[RUSPROFILE] Слишком низкая схожесть ({best['score']:.2f}), пропускаем.")
+            #     return None, None
             
             # Если данных не хватает, идем на страницу карточки
             if best["url"] and (not best["inn"] or not best["address"]) and not best["is_main_page"]:
@@ -5509,10 +5508,8 @@ JSON:
             special_notes = doc.get("Особые_отметки", "")
             if special_notes:
                 special_lower = special_notes.lower()
-                # Пропускаем если ТС отсутствует в реестре
-                if any(keyword in special_lower for keyword in 
-                       ["отсутствуют", "отсутствует", "не зарегистрировано"]):
-                    continue
+                # УДАЛЕНО: Проверка на "отсутствуют" давала ложные срабатывания (например "Аресты отсутствуют")
+                
                 # Пропускаем проданные/снятые с учета
                 if any(keyword in special_lower for keyword in 
                        ["снято с учета", "продаж", "продан", "передач", "утилизац"]):
