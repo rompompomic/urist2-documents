@@ -4765,7 +4765,9 @@ JSON:
             
             # 2. Если не нашли в группе (или он некорректный), ищем через RusProfile
             # Даже если нашли, если это банк, лучше проверить через RusProfile (там точнее)
-            should_check_rusprofile = False
+            should_check_rusprofile = getattr(DocumentProcessor, "SHOULD_CHECK_RUSPROFILE", False)
+            
+            # Если ИНН нет или он подозрительный
             if not found_inn:
                 should_check_rusprofile = True
             elif len(found_inn) not in [10, 12]:
