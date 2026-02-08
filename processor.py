@@ -56,6 +56,9 @@ class DocumentOutput:
 
 class DocumentProcessor:
     """Processes PDF documents and aggregates structured data."""
+    
+    # Кеш для запросов к RusProfile: {company_name: (inn, address)}
+    _rusprofile_cache: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
 
     def __init__(self) -> None:
         pass
@@ -2552,6 +2555,11 @@ JSON:
         if not company_name or not company_name.strip():
             return None, None
             
+        # 1. Проверяем кеш
+        if company_name in DocumentProcessor._rusprofile_cache:
+            # print(f"[RUSPROFILE_CACHE] HIT for '{company_name}'")
+            return DocumentProcessor._rusprofile_cache[company_name]
+
         try:
             # Импорты внутри метода, чтобы не засорять глобальную область, если они нужны только тут
             import random
@@ -2790,8 +2798,12 @@ JSON:
 
             # Финальная проверка целостности: должен быть ИНН (адреса иногда нет у ликвидированных)
             if best["inn"]:
+                # Сохраняем в кеш
+                DocumentProcessor._rusprofile_cache[company_name] = (best["inn"], best.get("address"))
                 return best["inn"], best["address"]
             
+            # Кешируем отрицательный результат
+            DocumentProcessor._rusprofile_cache[company_name] = (None, None)
             return None, None
             
         except Exception as e:
@@ -4829,7 +4841,7 @@ JSON:
                     "Фамилия": debtor_fio.split()[0] if debtor_fio and len(debtor_fio.split()) > 0 else "",
                     "Имя": debtor_fio.split()[1] if debtor_fio and len(debtor_fio.split()) > 1 else "",
                     "Отчество": debtor_fio.split()[2] if debtor_fio and len(debtor_fio.split()) > 2 else "",
-                    "ИНН": debtor_inn,
+                    "ИНН": debtor_inn, # Возвращаем имя переменной ИНН для должника (по просьбе пользователя)
                     "Снилs": debtor_snils,
                     "Адрес_регистрации_должника": debtor_address,
                 }
