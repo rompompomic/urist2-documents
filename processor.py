@@ -4746,15 +4746,26 @@ JSON:
             found_inn = None
             for credit in credits_list:
                 cand = credit.get("ИНН_кредитора")
-                if cand and str(cand).strip():
-                    found_inn = str(cand).strip()
+                if cand and str(cand).strip() and str(cand).strip().replace(' ', '').isdigit():
+                    found_inn = str(cand).strip().replace(' ', '')
                     print(f"[DEBUG_INN] Нашел ИНН внутри группы (кредит от {credit.get('Дата_договора')}): {found_inn}")
                     break
             
-            # 2. Если не нашли в группе, ищем через RusProfile/Словарь
+            # 2. Если не нашли в группе (или он некорректный), ищем через RusProfile
+            # Даже если нашли, если это банк, лучше проверить через RusProfile (там точнее)
+            should_check_rusprofile = False
             if not found_inn:
-                print(f"[DEBUG_INN] ИНН не найден в документах группы, ищу в реестре/кеше...")
-                found_inn = DocumentProcessor.get_bank_inn(кредитор_display)
+                should_check_rusprofile = True
+            elif len(found_inn) not in [10, 12]:
+                 print(f"[DEBUG_INN] ИНН из документа странной длины ({len(found_inn)}), перепроверяем: {found_inn}")
+                 should_check_rusprofile = True
+
+            if should_check_rusprofile:
+                print(f"[DEBUG_INN] ИНН не найден или вызывает сомнения, ищу в реестре/RusProfile для '{кредитор_display}'...")
+                rus_inn = DocumentProcessor.get_bank_inn(кредитор_display)
+                if rus_inn:
+                     found_inn = rus_inn
+                     print(f"[DEBUG_INN] Нашел ИНН через RusProfile: {found_inn}")
             
             raw_inn = found_inn
             
