@@ -4869,14 +4869,18 @@ JSON:
                     "Тип_кредита": тип_кредита,
                     "Кредитор": кредитор_display if is_first_contract else "",
                     
-                    # ПРЯМОЕ СООТВЕТСТВИЕ: Используем ключи, скопированные из запроса пользователя
-                    "ИНН_кредитора": inn_val_safe, # ТЕПЕРЬ ВСЕГДА ЗАПОЛНЯЕМ ИНН (если он есть), даже не в первой строке (по запросу многих юристов)
-                    
-                    # Алиасы для подстраховки (разные варианты написания)
+                    # ИНН с префиксом "ИНН " (для текстовых полей в заявлениях)
+                    "ИНН_кредитора": inn_val_safe,
+                    "ИНН_Кредитора": inn_val_safe,  # С заглавной К для шаблона
                     "Инн_кредитора": inn_val_safe,
                     "ИНН": inn_val_safe,
                     "inn_creditor": inn_val_safe,
                     "Inn_creditor": inn_val_safe,
+                    
+                    # ИНН без префикса - только номер (для таблиц)
+                    "ИНН_номер": raw_inn if raw_inn else "",
+                    "Инн_номер": raw_inn if raw_inn else "",
+                    "Inn_number": raw_inn if raw_inn else "",
 
                     "Адрес_кредитора": адрес if is_first_contract else "",
                     "Дата_договора": дата_текст,
@@ -4899,9 +4903,9 @@ JSON:
                 if is_first_contract:
                     print(f"[DEBUG_TABLE_ROW] Добавлена строка 1.{counter}:") 
                     print(f"   Кредитор='{row_data['Кредитор']}'")
-                    print(f"   ИНН_кредитора='{row_data['ИНН_кредитора']}'")
-                    print(f"   Инн_кредитора='{row_data['Инн_кредитора']}'")
-                    print(f"   ИНН='{row_data['ИНН']}'")
+                    print(f"   ИНН_кредитора (с префиксом)='{row_data['ИНН_кредитора']}'")
+                    print(f"   ИНН_номер (чистый)='{row_data['ИНН_номер']}'")
+                    print(f"   Адрес_кредитора='{row_data['Адрес_кредитора']}'")
                 
                 table_rows.append(row_data)
             
@@ -5005,19 +5009,29 @@ JSON:
                 адрес = адрес_из_документа or адрес_из_реестра
                 
                 # ИНН кредитора: используем уже найденный из постановления, если нет - ищем снова
-                инн_display = debt.get("ИНН_кредитора") or DocumentProcessor.get_bank_inn(кредитор_canonical)
-                if инн_display:
-                    инн_display = f"ИНН {инн_display}"
+                raw_inn = debt.get("ИНН_кредитора") or DocumentProcessor.get_bank_inn(кредитор_canonical)
+                инн_display = f"ИНН {raw_inn}" if raw_inn else ""
             else:
                 # Для ИП без взыскателя - оставляем пустыми
                 адрес = ""
+                raw_inn = ""
                 инн_display = ""
             
             table_rows.append({
                 "пп_кредит": f"1.{counter}",
                 "Тип_кредита": debt["Тип_кредита"],
                 "Кредитор": кредитор_canonical,
+                
+                # ИНН с префиксом "ИНН " (для текстовых полей)
                 "ИНН_кредитора": инн_display,
+                "ИНН_Кредитора": инн_display,  # С заглавной К для шаблона
+                "ИНН": инн_display,
+                
+                # ИНН без префикса - только номер (для таблиц)
+                "ИНН_номер": raw_inn if raw_inn else "",
+                "Инн_номер": raw_inn if raw_inn else "",
+                "Inn_number": raw_inn if raw_inn else "",
+                
                 "Адрес_кредитора": адрес,
                 "Дата_договора": debt["Дата_договора"],
                 "Полная_сумма_обязательства": f"{debt['Сумма']:.2f}",
@@ -5030,9 +5044,7 @@ JSON:
                 "Имя": debtor_fio.split()[1] if debtor_fio and len(debtor_fio.split()) > 1 else "",
                 "Отчество": debtor_fio.split()[2] if debtor_fio and len(debtor_fio.split()) > 2 else "",
                 "ИНН_должника": debtor_inn,
-                # "ИНН": debtor_inn, # ОТКЛЮЧЕНО: Не перезаписываем ИНН кредитора
                 "Снилс": debtor_snils,
-                "ИНН": инн_display, # Добавляем ИНН кредитора как основной ИНН строки
                 "Адрес_регистрации_должника": debtor_address,
             })
             counter += 1
