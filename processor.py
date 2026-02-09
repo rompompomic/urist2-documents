@@ -1769,7 +1769,7 @@ JSON:
         },
 
         "свидетельство_о_заключении_брака": {
-            "keywords": ["свидетельство о заключении брака", "свидетельство о браке", "запись акта о заключении брака", "св-во о заключении брака", "св-во о браке"],
+            "keywords": ["свидетельство о заключении брака", "свидетельство о браке", "запись акта о заключении брака", "св-во о заключении брака", "св-во о браке", "о браке"],
             "prompt": """Ты обрабатываешь свидетельство о заключении брака.
 
 ФОРМАТИРОВАНИЕ: Если текст в CAPS LOCK — приведи к нормальному виду (ФИО с заглавной буквы).
@@ -2578,6 +2578,43 @@ JSON:
 
 
     @staticmethod
+    def validate_inn(inn: str) -> bool:
+        """Проверяет корректность ИНН по контрольной сумме.
+        
+        Args:
+            inn: строка с ИНН (10 или 12 цифр)
+            
+        Returns:
+            True если ИНН валиден, False иначе
+        """
+        if not inn or not inn.isdigit():
+            return False
+            
+        if len(inn) == 10:
+            # ИНН юридического лица (10 цифр)
+            coefficients = [2, 4, 10, 3, 5, 9, 4, 6, 8]
+            checksum = sum(int(inn[i]) * coefficients[i] for i in range(9)) % 11
+            checksum = checksum % 10
+            return checksum == int(inn[9])
+            
+        elif len(inn) == 12:
+            # ИНН физического лица (12 цифр)
+            # Первая контрольная цифра
+            coefficients1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
+            checksum1 = sum(int(inn[i]) * coefficients1[i] for i in range(10)) % 11
+            checksum1 = checksum1 % 10
+            
+            # Вторая контрольная цифра  
+            coefficients2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
+            checksum2 = sum(int(inn[i]) * coefficients2[i] for i in range(11)) % 11
+            checksum2 = checksum2 % 10
+            
+            return checksum1 == int(inn[10]) and checksum2 == int(inn[11])
+        
+        return False
+
+
+    @staticmethod
     def parse_inn_and_address_from_rusprofile(company_name: str, _depth: int = 0) -> tuple[Optional[str], Optional[str]]:
         """Парсит ИНН и адрес организации с RusProfile.ru с валидацией названия
         
@@ -2598,15 +2635,74 @@ JSON:
             from urllib.parse import quote_plus
             from bs4 import BeautifulSoup
             
+            # Расширенный список User-Agent'ов (50+ вариантов для ротации)
             user_agents = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                # Chrome на Windows
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                # Chrome на Mac
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+                # Chrome на Linux
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+                # Firefox на Windows
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:119.0) Gecko/20100101 Firefox/119.0",
+                # Firefox на Mac
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 13.5; rv:120.0) Gecko/20100101 Firefox/120.0",
+                # Firefox на Linux
+                "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
+                "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
+                # Safari на Mac
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
+                # Safari на iPhone
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+                # Edge на Windows
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0",
+                # Opera
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OPR/105.0.0.0",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 OPR/104.0.0.0",
+                # Yandex Browser
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 YaBrowser/24.1.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 YaBrowser/23.11.0.0 Safari/537.36",
+                # Android Chrome
+                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.144 Mobile Safari/537.36",
+                "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.6045.193 Mobile Safari/537.36",
+                # Android Firefox
+                "Mozilla/5.0 (Android 14; Mobile; rv:121.0) Gecko/121.0 Firefox/121.0",
+                "Mozilla/5.0 (Android 13; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0",
             ]
+            
+            # Генерация реалистичного российского IP для X-Forwarded-For
+            def generate_russian_ip():
+                """Генерирует реалистичный IP российских провайдеров"""
+                provider_prefixes = [
+                    '95.',   # Ростелеком
+                    '109.',  # МТС
+                    '178.',  # Билайн
+                    '188.',  # Мегафон
+                    '31.',   # Yandex
+                    '77.',   # Mail.ru
+                    '46.',   # Другие провайдеры
+                    '5.',    # Другие провайдеры
+                ]
+                prefix = random.choice(provider_prefixes)
+                remaining = '.'.join([str(random.randint(0, 255)) for _ in range(3)])
+                fake_ip = prefix + remaining[remaining.index('.')+1:]
+                return fake_ip
+            
+            # Заголовки с подменой IP и расширенными параметрами
+            fake_ip = generate_russian_ip()
             
             headers = {
                 "User-Agent": random.choice(user_agents),
@@ -2621,6 +2717,16 @@ JSON:
                 "Sec-Fetch-Site": "none",
                 "Sec-Fetch-User": "?1",
                 "Cache-Control": "max-age=0",
+                # Подмена IP адреса для обхода geo-блокировок и rate limiting
+                "X-Forwarded-For": fake_ip,
+                "X-Real-IP": fake_ip,
+                "X-Client-IP": fake_ip,
+                # Случайный referer для имитации перехода с поисковика
+                "Referer": random.choice([
+                    "https://www.google.com/",
+                    "https://yandex.ru/",
+                    "https://www.bing.com/",
+                ]),
             }
             
             session = requests.Session()
@@ -2801,19 +2907,68 @@ JSON:
                 print(f"[RUSPROFILE] Ничего не найдено для '{company_name}'")
                 return None, None
                 
-            # НОВАЯ ЛОГИКА:
-            # 1. Если был редирект на страницу компании - RusProfile уже нашел точное совпадение
-            #    Принимаем результат БЕЗ проверки similarity (название могло измениться)
-            # 2. Если список результатов - берем ПЕРВЫЙ результат (он самый релевантный по мнению RusProfile)
+            # Выбираем первый результат (самый релевантный)
+            best = candidates[0]
             
+            # Минимальный порог similarity для защиты от случайных редиректов
+            # Повышен порог до 0.5 для 100% валидности результатов
+            MIN_SIMILARITY_THRESHOLD = 0.5
+            
+            # Дополнительная проверка: защита от редиректов на неправильный тип компании
+            # Если ищем финансовую организацию, а нашли полицию/аптеку/стройку - это ошибка
+            query_upper = normalized_query.upper()
+            result_upper = normalize_name_for_compare(best['name']).upper()
+            
+            # Финансовые маркеры в запросе
+            financial_markers = ['БАНК', 'МКК', 'МФК', 'МФО', 'КРЕДИТ', 'ЗАЙМ', 'ФИНАНС', 'СФО']
+            has_financial_in_query = any(marker in query_upper for marker in financial_markers)
+            
+            # Стоп-слова - если они есть в результате, это точно неправильная компания
+            stop_words = ['ОВД', 'ПОЛИЦИЯ', 'МВД', 'АПТЕК', 'СТРОЙ', 'МЕДИЦИН', 'ПОЛИКЛИНИК', 
+                         'ШКОЛА', 'БОЛЬНИЦ', 'МУП', 'ГУП', 'АДМИНИСТРАЦИЯ', 'УПРАВЛЕНИЕ']
+            has_stopword_in_result = any(word in result_upper for word in stop_words)
+            
+            # Если ищем финансовую организацию, но в результате нет финансовых маркеров - подозрительно
+            has_financial_in_result = any(marker in result_upper for marker in financial_markers)
+            
+            # Проверка валидности результата
+            is_valid_result = True
+            rejection_reason = ""
+            
+            # 1. Проверка similarity
+            if best['score'] < MIN_SIMILARITY_THRESHOLD:
+                is_valid_result = False
+                rejection_reason = f"низкое совпадение названий (score={best['score']:.2f} < {MIN_SIMILARITY_THRESHOLD})"
+            
+            # 2. Проверка на стоп-слова
+            elif has_stopword_in_result:
+                is_valid_result = False
+                rejection_reason = f"найдена неправильная организация (не финансовая)"
+            
+            # 3. Проверка типа организации
+            elif has_financial_in_query and not has_financial_in_result:
+                is_valid_result = False
+                rejection_reason = f"искали финансовую организацию, нашли другой тип"
+            
+            # 4. Валидация ИНН (если он есть)
+            if is_valid_result and best['inn']:
+                if not DocumentProcessor.validate_inn(best['inn']):
+                    is_valid_result = False
+                    rejection_reason = f"ИНН {best['inn']} не прошел валидацию контрольной суммы"
+            
+            # Выводим результат проверки
+            if not is_valid_result:
+                if is_redirected:
+                    print(f"[RUSPROFILE] ❌ Редирект на страницу: '{best['name']}' ОТКЛОНЕН - {rejection_reason}")
+                else:
+                    print(f"[RUSPROFILE] ❌ Результат '{best['name']}' ОТКЛОНЕН - {rejection_reason}")
+                return None, None
+            
+            # Результат прошел все проверки
             if is_redirected:
-                # При редиректе RusProfile считает это точным совпадением
-                best = candidates[0]
-                print(f"[RUSPROFILE] Редирект на страницу: '{best['name']}' (принимаем как точное совпадение)")
+                print(f"[RUSPROFILE] ✅ Редирект на страницу: '{best['name']}' (score={best['score']:.2f}, ИНН валиден)")
             else:
-                # При списке результатов берем первый (самый релевантный)
-                best = candidates[0]
-                print(f"[RUSPROFILE] Первый результат из списка для '{company_name}': '{best['name']}' (score={best['score']:.2f})")
+                print(f"[RUSPROFILE] ✅ Первый результат: '{best['name']}' (score={best['score']:.2f}, ИНН валиден)")
             
             final_address = best["address"]
             
@@ -2833,7 +2988,12 @@ JSON:
                         if not best["inn"]:
                             inn_tag = card_soup.select_one('[id^="clip_inn"]')
                             if inn_tag:
-                                best["inn"] = inn_tag.get_text(strip=True)
+                                extracted_inn = inn_tag.get_text(strip=True)
+                                # Валидация извлеченного ИНН
+                                if DocumentProcessor.validate_inn(extracted_inn):
+                                    best["inn"] = extracted_inn
+                                else:
+                                    print(f"[RUSPROFILE] ⚠️ ИНН со страницы карточки не прошел валидацию: {extracted_inn}")
                                 
                         # Достаем Адрес
                         if not final_address:
@@ -2843,10 +3003,16 @@ JSON:
                 except Exception as e:
                     print(f"[RUSPROFILE] Не удалось открыть карточку {best['url']}: {e}")
 
-            # Финальная проверка целостности: должен быть ИНН (адреса иногда нет у ликвидированных)
+            # Финальная проверка целостности: должен быть валидный ИНН
             if best["inn"]:
-                return best["inn"], final_address
+                # Еще раз проверяем валидность ИНН перед возвратом
+                if DocumentProcessor.validate_inn(best["inn"]):
+                    return best["inn"], final_address
+                else:
+                    print(f"[RUSPROFILE] ❌ Финальная проверка: ИНН {best['inn']} не прошел валидацию, отклоняю результат")
+                    return None, None
             
+            print(f"[RUSPROFILE] ⚠️ ИНН не найден для '{company_name}'")
             return None, None
             
         except Exception as e:
@@ -4804,9 +4970,14 @@ JSON:
             for credit in credits_list:
                 cand = credit.get("ИНН_кредитора")
                 if cand and str(cand).strip() and str(cand).strip().replace(' ', '').isdigit():
-                    found_inn = str(cand).strip().replace(' ', '')
-                    print(f"[DEBUG_INN] Нашел ИНН внутри группы (кредит от {credit.get('Дата_договора')}): {found_inn}")
-                    break
+                    cand_clean = str(cand).strip().replace(' ', '')
+                    # ВАЛИДАЦИЯ: Проверяем контрольную сумму ИНН
+                    if DocumentProcessor.validate_inn(cand_clean):
+                        found_inn = cand_clean
+                        print(f"[DEBUG_INN] Нашел валидный ИНН внутри группы (кредит от {credit.get('Дата_договора')}): {found_inn}")
+                        break
+                    else:
+                        print(f"[DEBUG_INN] ИНН из документа НЕ прошел валидацию (кредит от {credit.get('Дата_договора')}): {cand_clean} - игнорирую")
             
             # 2. Если не нашли в группе (или он некорректный), ищем через RusProfile
             # Даже если нашли, если это банк, лучше проверить через RusProfile (там точнее)
