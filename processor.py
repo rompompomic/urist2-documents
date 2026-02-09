@@ -2674,6 +2674,9 @@ JSON:
                 print(f"[RUSPROFILE] Ошибка при поиске '{company_name}': статус {response.status_code}")
                 return None, None
                 
+            # Определяем, произошел ли редирект (RusProfile сразу открыл страницу компании)
+            is_redirected = response.url != search_url and "/search" not in response.url
+                
             html = response.text
             soup = BeautifulSoup(html, "lxml")
             
@@ -2798,19 +2801,24 @@ JSON:
                 print(f"[RUSPROFILE] Ничего не найдено для '{company_name}'")
                 return None, None
                 
-            # Сортируем: сначала по score (убыв), затем по наличию ИНН (чтобы не пустые)
-            candidates.sort(key=lambda x: (x["score"], 1 if x["inn"] else 0), reverse=True)
+            # НОВАЯ ЛОГИКА:
+            # 1. Если был редирект на страницу компании - RusProfile уже нашел точное совпадение
+            #    Принимаем результат БЕЗ проверки similarity (название могло измениться)
+            # 2. Если список результатов - берем ПЕРВЫЙ результат (он самый релевантный по мнению RusProfile)
             
-            best = candidates[0]
-            print(f"[RUSPROFILE] Лучший кандидат для '{company_name}': '{best['name']}' (score={best['score']:.2f})")
+            if is_redirected:
+                # При редиректе RusProfile считает это точным совпадением
+                best = candidates[0]
+                print(f"[RUSPROFILE] Редирект на страницу: '{best['name']}' (принимаем как точное совпадение)")
+            else:
+                # При списке результатов берем первый (самый релевантный)
+                best = candidates[0]
+                print(f"[RUSPROFILE] Первый результат из списка для '{company_name}': '{best['name']}' (score={best['score']:.2f})")
             
-            # Пороговая проверка схожести отключена по требованию пользователя
-            # if best["score"] < 0.6:
-            #     print(f"[RUSPROFILE] Слишком низкая схожесть ({best['score']:.2f}), пропускаем.")
-            #     return None, None
+            final_address = best["address"]
             
             # Если данных не хватает, идем на страницу карточки
-            if best["url"] and (not best["inn"] or not best["address"]) and not best["is_main_page"]:
+            if best["url"] and (not best["inn"] or not final_address) and not best["is_main_page"]:
                 # Дополнительная задержка перед переходом
                 time.sleep(random.uniform(1.5, 3.0))
                 
@@ -2828,16 +2836,16 @@ JSON:
                                 best["inn"] = inn_tag.get_text(strip=True)
                                 
                         # Достаем Адрес
-                        if not best["address"]:
+                        if not final_address:
                             addr_tag = card_soup.select_one("#clip_address")
                             if addr_tag:
-                                best["address"] = addr_tag.get_text(" ", strip=True)
+                                final_address = addr_tag.get_text(" ", strip=True)
                 except Exception as e:
                     print(f"[RUSPROFILE] Не удалось открыть карточку {best['url']}: {e}")
 
             # Финальная проверка целостности: должен быть ИНН (адреса иногда нет у ликвидированных)
             if best["inn"]:
-                return best["inn"], best["address"]
+                return best["inn"], final_address
             
             return None, None
             
