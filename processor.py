@@ -56,9 +56,6 @@ class DocumentOutput:
 
 class DocumentProcessor:
     """Processes PDF documents and aggregates structured data."""
-    
-    # Кеш для запросов к RusProfile: {company_name: (inn, address)}
-    _rusprofile_cache: Dict[str, tuple[Optional[str], Optional[str]]] = {}
 
     def __init__(self) -> None:
         pass
@@ -2592,11 +2589,6 @@ JSON:
         """
         if not company_name or not company_name.strip():
             return None, None
-            
-        # 1. Проверяем кеш
-        # ВРЕМЕННО ОТКЛЮЧАЕМ ЧТЕНИЕ КЕША ДЛЯ ОТЛАДКИ (чтобы гарантировать свежий запрос)
-        # if company_name in DocumentProcessor._rusprofile_cache:
-        #    return DocumentProcessor._rusprofile_cache[company_name]
 
         try:
             # Импорты внутри метода, чтобы не засорять глобальную область, если они нужны только тут
@@ -2845,13 +2837,8 @@ JSON:
 
             # Финальная проверка целостности: должен быть ИНН (адреса иногда нет у ликвидированных)
             if best["inn"]:
-                # Сохраняем в кеш
-                DocumentProcessor._rusprofile_cache[company_name] = (best["inn"], best.get("address"))
                 return best["inn"], best["address"]
             
-            # ОТКЛЮЧАЕМ КЕШИРОВАНИЕ ОТРИЦАТЕЛЬНЫХ РЕЗУЛЬТАТОВ
-            # Чтобы при повторном запуске мы снова попытались найти
-            # DocumentProcessor._rusprofile_cache[company_name] = (None, None)
             return None, None
             
         except Exception as e:
