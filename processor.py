@@ -2615,16 +2615,25 @@ JSON:
 
 
     @staticmethod
-    def parse_inn_and_address_from_rusprofile(company_name: str, _depth: int = 0) -> tuple[Optional[str], Optional[str]]:
+    def parse_inn_and_address_from_rusprofile(company_name: str, _depth: int = 0, _try_full_name: bool = False) -> tuple[Optional[str], Optional[str]]:
         """Парсит ИНН и адрес организации с RusProfile.ru с валидацией названия
         
         Args:
             company_name: Название организации для поиска
+            _depth: Глубина рекурсии (для retry с новыми параметрами)
+            _try_full_name: Если True, искать с полным названием (не удалять ОПФ)
             
         Returns:
             Кортеж (ИНН, адрес) или (None, None) если не найдено
         """
         if not company_name or not company_name.strip():
+            return None, None
+        
+        # Максимум 3 попытки с разными User-Agent и IP
+        MAX_RETRIES = 3
+        
+        if _depth >= MAX_RETRIES:
+            print(f"[RUSPROFILE] ⚠️ Достигнут лимит попыток ({MAX_RETRIES}) для '{company_name}'")
             return None, None
 
         try:
@@ -2632,8 +2641,13 @@ JSON:
             import random
             import difflib
             import requests
+            import time
             from urllib.parse import quote_plus
             from bs4 import BeautifulSoup
+            
+            # Вывод информации о текущей попытке
+            if _depth > 0:
+                print(f"[RUSPROFILE] 🔄 Попытка #{_depth + 1}/{MAX_RETRIES} для '{company_name}'")
             
             # Расширенный список User-Agent'ов (50+ вариантов для ротации)
             user_agents = [
@@ -2703,34 +2717,88 @@ JSON:
             
             # Заголовки с подменой IP и расширенными параметрами
             fake_ip = generate_russian_ip()
+            selected_user_agent = random.choice(user_agents)
             
+            # Определяем тип браузера и платформу для специфичных заголовков
+            is_chrome = 'Chrome' in selected_user_agent and 'Edg' not in selected_user_agent
+            is_mobile = 'Mobile' in selected_user_agent or 'Android' in selected_user_agent or 'iPhone' in selected_user_agent
+            
+            # Определяем платформу
+            if 'Windows' in selected_user_agent:
+                platform = '"Windows"'
+            elif 'Macintosh' in selected_user_agent or 'iPhone' in selected_user_agent or 'iPad' in selected_user_agent:
+                platform = '"macOS"' if 'Macintosh' in selected_user_agent else '"iOS"'
+            elif 'Android' in selected_user_agent:
+                platform = '"Android"'
+            else:
+                platform = '"Linux"'
+            
+            # Базовые заголовки
             headers = {
-                "User-Agent": random.choice(user_agents),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Accept-Encoding": "gzip, deflate, br",
+                "User-Agent": selected_user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "Accept-Language": random.choice([
+                    "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "ru,en;q=0.9",
+                    "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
+                ]),
+                "Accept-Encoding": random.choice([
+                    "gzip, deflate, br",
+                    "gzip, deflate, br, zstd",
+                ]),
                 "DNT": "1",
                 "Connection": "keep-alive",
                 "Upgrade-Insecure-Requests": "1",
                 "Sec-Fetch-Dest": "document",
                 "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-Site": "none" if _depth == 0 else "same-origin",
                 "Sec-Fetch-User": "?1",
                 "Cache-Control": "max-age=0",
                 # Подмена IP адреса для обхода geo-блокировок и rate limiting
                 "X-Forwarded-For": fake_ip,
                 "X-Real-IP": fake_ip,
                 "X-Client-IP": fake_ip,
-                # Случайный referer для имитации перехода с поисковика
-                "Referer": random.choice([
-                    "https://www.google.com/",
-                    "https://yandex.ru/",
-                    "https://www.bing.com/",
-                ]),
+                # Российская временная зона (Москва UTC+3)
+                "X-Timezone": "Europe/Moscow",
+                "X-Timezone-Offset": "+180",
             }
             
-            session = requests.Session()
-            session.headers.update(headers)
+            # Browser-specific headers для Chrome
+            if is_chrome:
+                # Извлекаем версию Chrome
+                chrome_version_match = re.search(r'Chrome/(\d+)', selected_user_agent)
+                chrome_version = chrome_version_match.group(1) if chrome_version_match else "120"
+                
+                headers.update({
+                    "sec-ch-ua": f'"Not_A Brand";v="8", "Chromium";v="{chrome_version}", "Google Chrome";v="{chrome_version}"',
+                    "sec-ch-ua-mobile": "?1" if is_mobile else "?0",
+                    "sec-ch-ua-platform": platform,
+                })
+            
+            # Referer chain: первый запрос - с поисковика, повторные - с предыдущей страницы
+            if _depth == 0:
+                # Первая попытка - referer с поисковика
+                headers["Referer"] = random.choice([
+                    "https://www.google.com/search?q=" + quote_plus(company_name),
+                    "https://yandex.ru/search/?text=" + quote_plus(company_name),
+                    "https://www.bing.com/search?q=" + quote_plus(company_name),
+                ])
+            else:
+                # Повторные попытки - referer с RusProfile (навигация внутри сайта)
+                headers["Referer"] = "https://www.rusprofile.ru/"
+                headers["Sec-Fetch-Site"] = "same-origin"
+            
+            # Используем requests с поддержкой HTTP/2 (через httpx при наличии)
+            try:
+                import httpx
+                # Создаем HTTP/2 клиент для более реалистичного поведения
+                session = httpx.Client(http2=True, headers=headers, timeout=20.0, follow_redirects=True)
+                using_http2 = True
+            except ImportError:
+                # Fallback на обычный requests
+                session = requests.Session()
+                session.headers.update(headers)
+                using_http2 = False
             
             # Функция нормализации для сравнения названий
             def normalize_name_for_compare(name: str) -> str:
@@ -2760,8 +2828,16 @@ JSON:
             # Убираем кавычки из поискового запроса для лучшего матчинга
             clean_search_query = re.sub(r'["\'«»]', '', clean_search_query)
             
+            # Сохраняем оригинальное название до упрощения
+            before_simplification = clean_search_query
+            
             # Убираем ООО, АО, ПАО из начала строки для чистоты, если они остались
-            clean_search_query = re.sub(r'^(ООО|АО|ПАО|ЗАО|МКК|МФК|МФО)\s+', '', clean_search_query, flags=re.IGNORECASE)
+            # НО ТОЛЬКО если не указан флаг _try_full_name (тогда оставляем полное название)
+            if not _try_full_name:
+                clean_search_query = re.sub(r'^(ООО|АО|ПАО|ЗАО|МКК|МФК|МФО)\s+', '', clean_search_query, flags=re.IGNORECASE)
+            
+            # Запоминаем, было ли упрощение
+            was_simplified = (clean_search_query != before_simplification)
 
             # Убираем скобки с конца
             clean_search_query = re.sub(r'\)\)+$', '', clean_search_query) 
@@ -2774,14 +2850,22 @@ JSON:
             # Используем очищенный запрос
             print(f"[RUSPROFILE] Поиск по запросу: '{clean_search_query}' (orig: '{company_name}')")
             search_url = f"https://www.rusprofile.ru/search?query={quote_plus(clean_search_query)}"
-            response = session.get(search_url, timeout=20, allow_redirects=True)
+            
+            # Выполняем запрос (работает одинаково для requests и httpx)
+            if using_http2:
+                response = session.get(search_url)
+            else:
+                response = session.get(search_url, timeout=20, allow_redirects=True)
             
             if response.status_code != 200:
                 print(f"[RUSPROFILE] Ошибка при поиске '{company_name}': статус {response.status_code}")
+                if using_http2:
+                    session.close()
                 return None, None
                 
             # Определяем, произошел ли редирект (RusProfile сразу открыл страницу компании)
-            is_redirected = response.url != search_url and "/search" not in response.url
+            response_url = str(response.url) if using_http2 else response.url
+            is_redirected = response_url != search_url and "/search" not in response_url
                 
             html = response.text
             soup = BeautifulSoup(html, "lxml")
@@ -2899,7 +2983,7 @@ JSON:
                     "inn": inn,
                     "address": address,
                     "score": similarity,
-                    "url": response.url,
+                    "url": response_url,
                     "is_main_page": True
                 })
 
@@ -2962,7 +3046,23 @@ JSON:
                     print(f"[RUSPROFILE] ❌ Редирект на страницу: '{best['name']}' ОТКЛОНЕН - {rejection_reason}")
                 else:
                     print(f"[RUSPROFILE] ❌ Результат '{best['name']}' ОТКЛОНЕН - {rejection_reason}")
-                return None, None
+                
+                # FALLBACK: Если было упрощение названия (удален ОПФ) и еще не пробовали полное название
+                # То сначала пробуем с полным названием (например "ПАО ВТБ" вместо "ВТБ")
+                if was_simplified and not _try_full_name:
+                    print(f"[RUSPROFILE] 🔄 Пробуем поиск с полным названием (с ОПФ)...")
+                    time.sleep(random.uniform(0.5, 1.0))
+                    return DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=True)
+                
+                # RETRY: Пробуем еще раз с новыми параметрами (User-Agent, IP, задержка)
+                if _depth < MAX_RETRIES - 1:
+                    retry_delay = random.uniform(1.5, 3.0)
+                    print(f"[RUSPROFILE] 🔄 Повтор попытки #{_depth + 2} через {retry_delay:.1f} сек с новыми параметрами...")
+                    time.sleep(retry_delay)
+                    return DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth + 1, _try_full_name=False)
+                else:
+                    print(f"[RUSPROFILE] ❌ Все попытки исчерпаны для '{company_name}'")
+                    return None, None
             
             # Результат прошел все проверки
             if is_redirected:
