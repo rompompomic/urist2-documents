@@ -6977,7 +6977,7 @@ JSON формат:
             
             # Для автомобилей используем VIN
             if predmet == "автомобиль":
-                addr_or_char = deal.get("Адрес_или_характеристики", "")
+                addr_or_char = deal.get("Адрес_или_характеристики") or ""
                 vin = ""
                 if "VIN:" in addr_or_char:
                     vin_start = addr_or_char.index("VIN:") + 4
@@ -6994,7 +6994,7 @@ JSON формат:
                     deal_key = (predmet, date_str, cadastral)
                 else:
                     # Fallback: используем адрес
-                    address = deal.get("Адрес_или_характеристики", "")[:100]
+                    address = (deal.get("Адрес_или_характеристики") or "")[:100]
                     deal_key = (predmet, date_str, address)
             
             # Проверяем, не добавлена ли уже эта сделка
