@@ -1561,6 +1561,7 @@ JSON:
 - Коллекции: описание (монеты, марки, часы), количество предметов, оценочная стоимость.
 - Дорогая техника и электроника: описание, марка/модель, год, стоимость.
 - Другое ценное имущество: описание, стоимость.
+- НЕДВИЖИМОЕ ИМУЩЕСТВО: если в описи указаны квартиры, земельные участки, гаражи или иная недвижимость - извлеки их в отдельный список! Найди адрес, площадь, кадастровый номер (если есть), вид права (собственность/доля).
 - Дата оценки/составления описи.
 - Оценщик (если есть): ФИО, организация.
 
@@ -1582,6 +1583,17 @@ JSON:
                         "Характеристики": "...",
                         "Оценочная_стоимость": "..."
                 }
+        ],
+        "Недвижимость": [
+            {
+                "Вид": "квартира/земельный участок/жилой дом/гараж/...",
+                "Адрес": "...",
+                "Площадь": "...",
+                "Кадастровый_номер": "...",
+                "Вид_права": "собственность/долевая (1/2)/...",
+                "Описание": "...",
+                "Стоимость": "..."
+            }
         ],
         "Общая_стоимость": "..."
 }
@@ -3072,8 +3084,18 @@ JSON:
             
             final_address = best["address"]
             
-            # Если данных не хватает, идем на страницу карточки
-            if best["url"] and (not best["inn"] or not final_address) and not best["is_main_page"]:
+            # Если данных не хватает ИЛИ адрес слишком короткий (вероятно просто город), идем на страницу карточки
+            # Также проверяем, что в адресе есть индекс (6 цифр)
+            import re
+            is_bad_address = (
+                not final_address or 
+                len(final_address) < 20 or 
+                "г. Москва" == final_address.strip() or
+                not re.search(r'\d{6}', final_address)
+            )
+            
+            if best["url"] and (not best["inn"] or is_bad_address) and not best["is_main_page"]:
+                print(f"[RUSPROFILE] ℹ️ Переходим на карточку для уточнения данных (bad_address={is_bad_address})...")
                 # Дополнительная задержка перед переходом
                 time.sleep(random.uniform(1.5, 3.0))
                 
@@ -3095,11 +3117,28 @@ JSON:
                                 else:
                                     print(f"[RUSPROFILE] ⚠️ ИНН со страницы карточки не прошел валидацию: {extracted_inn}")
                                 
-                        # Достаем Адрес
-                        if not final_address:
-                            addr_tag = card_soup.select_one("#clip_address")
-                            if addr_tag:
-                                final_address = addr_tag.get_text(" ", strip=True)
+                        # Достаем Адрес (даже если он уже был, но плохой - обновляем)
+                        # Используем ту же логику очистки, что и для главной страницы
+                        addr_tag = card_soup.select_one("#clip_address")
+                        if addr_tag:
+                            # Чистим мусор (кнопки копирования и скрытые элементы)
+                            for dead in addr_tag.select(".copy_button, script, style, meta, .company-info__hidden"):
+                                dead.decompose()
+
+                            # Обрабатываем "разорванные" номера домов/помещений
+                            for span in addr_tag.find_all("span", class_="long_copy"):
+                                 span.unwrap()
+                            
+                            new_address = addr_tag.get_text(separator=" ", strip=True)
+                            
+                            # Чистим множественные пробелы и восстанавливаем запятые
+                            new_address = re.sub(r'\s+', ' ', new_address)
+                            new_address = re.sub(r'\s*,\s*', ', ', new_address)
+                            
+                            if new_address and len(new_address) > len(final_address or ""):
+                                final_address = new_address
+                                print(f"[RUSPROFILE] ✅ Адрес уточнен на карточке: {final_address}")
+                                
                 except Exception as e:
                     print(f"[RUSPROFILE] Не удалось открыть карточку {best['url']}: {e}")
 
@@ -3884,13 +3923,16 @@ JSON:
         return descriptions
 
     @staticmethod
-    def format_real_estate_detailed(data_list: List[Dict[str, Any]], owner_fio: str = "", notification_list: Optional[List[Dict[str, Any]]] = None) -> str:
+    def format_real_estate_detailed(data_list: List[Dict[str, Any]], owner_fio: str = "", notification_list: Optional[List[Dict[str, Any]]] = None, inventory_list: Optional[List[Dict[str, Any]]] = None) -> str:
         """Форматирует недвижимость в детальном виде, фильтруя по ФИО владельца.
 
-        Учитывает как выписки ЕГРН с полными данными, так и уведомления об отсутствии,
-        которые могут указывать на долевую собственность.
+        Учитывает:
+        1. Полные выписки ЕГРН (data_list)
+        2. Уведомления об отсутствии ЕГРН (notification_list) - могут указывать на долевую собственность
+        3. Описи имущества (inventory_list) - недвижимость, указанная должником в описи
         """
         descriptions: List[str] = []
+        processed_cadastral_numbers = set() # Чтобы избежать дублей (например, есть и выписка, и опись)
 
         # Обрабатываем полные выписки ЕГРН
         if data_list:
@@ -4055,6 +4097,59 @@ JSON:
                 notification_list, owner_fio
             )
             descriptions.extend(notification_estates)
+
+        # ВАЖНО: Добавляем недвижимость из Описи имущества (если она там есть)
+        if inventory_list:
+            print(f"[REAL_ESTATE_DETAILED] Checking inventory list ({len(inventory_list)} items)")
+            for inv in inventory_list:
+                estates = inv.get("Недвижимость", [])
+                if not estates:
+                    continue
+                
+                for estate in estates:
+                    vid = estate.get("Вид", "") or estate.get("Категория", "") or ""
+                    # Если вид явно содержит "авто" или "транспорт" - пропускаем, это движимое
+                    if "авто" in vid.lower() or "транспорт" in vid.lower():
+                        continue
+                        
+                    addr = estate.get("Адрес", "")
+                    kadaster = estate.get("Кадастровый_номер", "")
+                    
+                    # Дедупликация по кадастровому номеру и адресу
+                    is_duplicate = False
+                    if kadaster:
+                         for d in descriptions:
+                             if kadaster in d:
+                                 is_duplicate = True
+                                 break
+                    
+                    if not is_duplicate and addr:
+                        for d in descriptions:
+                            if addr.lower() in d.lower():
+                                is_duplicate = True
+                                break
+                    
+                    if is_duplicate:
+                        print(f"[REAL_ESTATE_DETAILED] Skip inventory item (duplicate): {addr} {kadaster}")
+                        continue
+
+                    # Формируем описание из описи
+                    parts = []
+                    if vid: parts.append(vid.capitalize())
+                    if kadaster: parts.append(f"кадастровый номер {kadaster}")
+                    if addr: parts.append(f"адрес: {addr}")
+                    if estate.get("Площадь"): parts.append(f"площадь: {estate.get('Площадь')}")
+                    
+                    # Вид права
+                    right_type = estate.get("Вид_права") or estate.get("Основание")
+                    if right_type: parts.append(right_type)
+                    
+                    if estate.get("Стоимость"): parts.append(f"стоимость: {estate.get('Стоимость')}")
+                    
+                    if parts:
+                        full_desc = ", ".join(parts)
+                        print(f"[REAL_ESTATE_DETAILED] Adding from inventory: {full_desc[:100]}")
+                        descriptions.append(full_desc)
 
         return "; ".join(descriptions) if descriptions else "нет"
 
@@ -5427,12 +5522,13 @@ JSON:
         return {"счета": счета_rows}
 
     @staticmethod
-    def format_realty_table(егрн_docs: List[Dict[str, Any]], owner_fio: str = "") -> Dict[str, Any]:
+    def format_realty_table(егрн_docs: List[Dict[str, Any]], owner_fio: str = "", inventory_list: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """Формирует таблицу недвижимости для описи имущества.
 
         Args:
             егрн_docs: список документов типа "егрн_выписка"
             owner_fio: ФИО владельца (из паспорта) для фильтрации
+            inventory_list: данные из "Описи имущества" (для fallback если нет выписки ЕГРН)
 
         Returns:
             Словарь с ключами для таблиц недвижимости
@@ -5442,12 +5538,75 @@ JSON:
         квартиры = []
         гаражи = []
         иное_недвижимое = []
+        
+        # Список для дедупликации (кадастровые номера и адреса)
+        processed_cadastral = set()
+        processed_addresses = set()
+        
+        # --- ФУНКЦИЯ ДОБАВЛЕНИЯ В СПИСКИ ---
+        def add_to_category(obj_data, category_counters):
+            тип_lower = (obj_data.get("Тип") or "").lower()
+            назначение_lower = (obj_data.get("Назначение") or "").lower()
+            адрес_lower = (obj_data.get("Адрес") or "").lower()
+            тип_объекта = obj_data.get("Тип") or obj_data.get("Назначение") or "Недвижимость"
 
-        земля_counter = 1
-        дом_counter = 1
-        квартира_counter = 1
-        гараж_counter = 1
-        иное_counter = 1
+            base_obj = {
+                "Вид_собственности": obj_data.get("Вид_права", "собственность"),
+                "Местонахождение_адрес": obj_data.get("Адрес", ""),
+                "Площадь": obj_data.get("Площадь", ""),
+                "Основание_приобретения_и_стоимость": obj_data.get("Основание", ""),
+                "Сведения_о_залоге_и_залогодержателе": obj_data.get("Залог", ""),
+            }
+
+            if "земельн" in тип_lower or "участок" in тип_lower:
+                земельные.append({
+                    **base_obj,
+                    "Кадастровый_номер": obj_data.get("Кадастровый_номер", ""),
+                    "Номер_в_списке": category_counters['земля'],
+                })
+                category_counters['земля'] += 1
+
+            elif ("жил" in тип_lower and "дом" in тип_lower) or "дача" in тип_lower or "садовый дом" in тип_lower:
+                название = f"{category_counters['дом']}) {тип_объекта}" if category_counters['дом'] > 1 else тип_объекта
+                жилые_дома.append({
+                    **base_obj,
+                    "Вид_и_наименование": название,
+                })
+                category_counters['дом'] += 1
+
+            elif (
+                "квартир" in тип_lower or 
+                "комнат" in тип_lower or 
+                "кв." in тип_lower or
+                "квартира" in назначение_lower or
+                ("помещение" in тип_lower and "жил" in назначение_lower)
+            ):
+                название = f"{category_counters['квартира']}) {тип_объекта}" if category_counters['квартира'] > 1 else тип_объекта
+                квартиры.append({
+                    **base_obj,
+                    "Вид_и_наименование": название,
+                })
+                category_counters['квартира'] += 1
+
+            elif "гараж" in тип_lower or "бокс" in тип_lower or "машино-место" in тип_lower:
+                название = f"{category_counters['гараж']}) {тип_объекта}" if category_counters['гараж'] > 1 else тип_объекта
+                гаражи.append({
+                    **base_obj,
+                    "Вид_и_наименование": название,
+                })
+                category_counters['гараж'] += 1
+
+            else:
+                название = f"{category_counters['иное']}) {тип_объекта}" if category_counters['иное'] > 1 else тип_объекта
+                иное_недвижимое.append({
+                    **base_obj,
+                    "Вид_и_наименование_имущества": название,
+                })
+                category_counters['иное'] += 1
+        
+        category_counters = {
+            'земля': 1, 'дом': 1, 'квартира': 1, 'гараж': 1, 'иное': 1
+        }
 
         for doc in егрн_docs:
             if not isinstance(doc, dict):
@@ -5460,55 +5619,44 @@ JSON:
                 continue
 
             # НОВАЯ СТРУКТУРА: массив "Объекты"
-            # Проверяем есть ли массив объектов (новая структура)
             объекты_список = doc.get("Объекты", [])
-            
-            # Если нет массива "Объекты", значит это старая структура - обрабатываем как один объект
             if not объекты_список:
-                объекты_список = [doc]  # Старая структура: весь doc - это один объект
+                объекты_список = [doc]
             
-            # Обрабатываем каждый объект в списке
             for obj in объекты_список:
                 # Получаем правообладателей
                 правообладатели = obj.get("Правообладатели", [])
 
-                # ФИЛЬТР: Пропускаем проданные объекты (дата прекращения права указана)
+                # ФИЛЬТР: Пропускаем проданные объекты
                 has_active_ownership = False
                 for право in правообладатели:
                     дата_прекращения = право.get("Дата_прекращения_права") or право.get("дата_прекращения_права") or право.get("дата_государственной_регистрации_прекращения_права") or право.get("Дата_государственной_регистрации_прекращения_права") or ""
-                    # Если хотя бы у одного правообладателя право действует (нет даты прекращения)
                     if not дата_прекращения or дата_прекращения.strip().lower() == "данные отсутствуют":
                         has_active_ownership = True
                         break
                 
-                # Если у всех правообладателей право прекращено (проданный объект) - пропускаем
                 if not has_active_ownership:
-                    print(f"[REALTY_TABLE] Skipping sold object with cadastral {obj.get('Объект', {}).get('Кадастровый_номер') or obj.get('Кадастровый_номер')} - all ownership terminated")
                     continue
 
                 # Проверяем есть ли наш человек среди правообладателей
                 owner_found = False
                 owner_data = None
 
-                # Если указан owner_fio - ищем конкретного владельца
                 if owner_fio:
                     for право in правообладатели:
                         фио = право.get("ФИО", "")
-                        # Проверяем, что и owner_fio, и фио не None и не пустые
                         if owner_fio and фио and owner_fio in фио:
                             owner_found = True
                             owner_data = право
                             break
-                    # Если не нашли владельца - пропускаем этот объект
                     if not owner_found:
                         continue
                 else:
-                    # Если owner_fio не указан - берем первого правообладателя (или всех)
                     if правообладатели:
                         owner_data = правообладатели[0]
                         owner_found = True
 
-                # Получаем данные объекта - могут быть как на верхнем уровне, так и в "Объект"
+                # Получаем данные объекта
                 объект = obj.get("Объект", {})
 
                 кадастр = obj.get("Кадастровый_номер", "")
@@ -5516,6 +5664,20 @@ JSON:
                 площадь = объект.get("Площадь") or obj.get("Площадь", "")
                 тип_объекта = объект.get("Вид") or obj.get("Тип_объекта", "")
                 назначение = объект.get("Назначение", "")
+
+                # Дедупликация по кадастровому
+                if кадастр and кадастр in processed_cadastral:
+                    continue
+                if кадастр:
+                    processed_cadastral.add(кадастр)
+                
+                # Дедупликация по адресу 
+                if адрес:
+                    # Нормализация для сравнения: нижний регистр + удаление пробелов
+                    addr_clean = " ".join(адрес.lower().split())
+                    if addr_clean in processed_addresses:
+                        continue
+                    processed_addresses.add(addr_clean)
 
                 # Определяем вид собственности и долю
                 вид_права = ""
@@ -5526,161 +5688,128 @@ JSON:
                 if owner_data:
                     вид_права = owner_data.get("Вид_права", "")
                     доля = owner_data.get("Доля", "")
-                    # Пробуем оба варианта названия поля (старое и новое)
                     документ_основание = owner_data.get("Документ_основание", "") or owner_data.get("Документ", "")
                     тип_собственности = owner_data.get("Тип_собственности", "")
 
                 # Формируем полный вид собственности
                 части_собственности = []
                 
-                # 1. Тип собственности (индивидуальная/долевая/совместная)
+                # 1. Тип собственности
                 if тип_собственности:
-                    # Нормализуем строку (убираем лишние пробелы)
                     normalized_type = " ".join(тип_собственности.split()).lower()
-                    
-                    # Фильтруем заведомо повторяющиеся синонимы, если они уже есть
-                    # Пример: "общедолевая собственность, общая долевая собственность" -> оставляем только первое
                     clean_parts = []
                     seen_parts = set()
-                    
-                    # Разбиваем по запятым и добавляем только уникальные части
                     for part in тип_собственности.split(","):
                         part_clean = part.strip()
                         part_lower = part_clean.lower()
-                        
-                        # Особая проверка для "общедолевой" и "общей долевой"
                         is_common_share = "общедолевая" in part_lower or "общая долевая" in part_lower
-                        
                         if is_common_share:
-                             # Если уже встречали любую вариацию долевой собственности - пропускаем
-                             if "common_share" in seen_parts:
-                                 continue
+                             if "common_share" in seen_parts: continue
                              seen_parts.add("common_share")
-                        
                         clean_parts.append(part_clean)
-                    
-                    # Собираем обратно
                     тип_собственности_fixed = ", ".join(clean_parts)
-                    if тип_собственности_fixed:
-                         части_собственности.append(тип_собственности_fixed)
+                    if тип_собственности_fixed: части_собственности.append(тип_собственности_fixed)
 
-                # 2. Вид права (собственность/постоянное пользование и т.д.)
-                # НЕ добавляем вид права если он уже содержится в типе собственности
+                # 2. Вид права
                 if вид_права:
                     вид_права_lower = вид_права.lower()
                     тип_собственности_lower = тип_собственности.lower() if тип_собственности else ""
-                    # Если вид права не дублирует тип собственности
                     if not (вид_права_lower in тип_собственности_lower or тип_собственности_lower in вид_права_lower):
                         части_собственности.append(вид_права)
                 
-                # 3. Доля в праве (если не 1/1)
+                # 3. Доля
                 if доля and доля != "1/1":
                     части_собственности.append(f"доля в праве: {доля}")
                 
-                # 4. Другие собственники (для совместной собственности)
+                # 4. Другие собственники
                 if тип_собственности and "совместн" in тип_собственности.lower() and len(правообладатели) > 1:
                     другие = [п.get("ФИО", "") for п in правообладатели if п != owner_data]
                     if другие:
                         части_собственности.append(f"совместно с: {', '.join(другие)}")
                 
-                вид_собственности = ", ".join(части_собственности) if части_собственности else ""
+                итог_вид_права = ", ".join(части_собственности) if части_собственности else ""
 
                 # Основание приобретения и стоимость
                 части_основания = []
                 if документ_основание:
                     части_основания.append(документ_основание)
                 
-                # Добавляем кадастровую стоимость если есть
                 кадастровая_стоимость = obj.get("Кадастровая_стоимость", "")
                 if кадастровая_стоимость:
                     части_основания.append(f"Кадастровая стоимость: {кадастровая_стоимость}")
                 
-                основание = "; ".join(части_основания) if части_основания else ""
+                итог_основание = "; ".join(части_основания) if части_основания else ""
 
-                # Обременения - форматируем в человекочитаемый текст
+                # Обременения
                 обременения = obj.get("Обременения", [])
                 залоги = []
                 if isinstance(обременения, list):
                     for обр in обременения:
-                        if not isinstance(обр, dict):
-                            continue
-                        
-                        # Пропускаем если погашено
-                        if обр.get("Погашено"):
-                            continue
-                        
+                        if not isinstance(обр, dict): continue
+                        if обр.get("Погашено"): continue
                         вид = обр.get("Вид", "")
                         залогодержатель_имя = обр.get("Залогодержатель", "")
-                        
-                        # Показываем только ипотеку и залог (где есть залогодержатель)
                         if ("ипотек" in вид.lower() or "залог" in вид.lower()) and залогодержатель_имя:
-                            # Формат: "Ипотека (ПАО Сбербанк)"
                             залоги.append(f"{вид} ({залогодержатель_имя})")
                 
-                залогодержатель = "; ".join(залоги) if залоги else ""
+                итог_залог = "; ".join(залоги) if залоги else ""
 
-                # Создаем базовый объект
-                base_obj = {
-                    "Вид_собственности": вид_собственности,
-                    "Местонахождение_адрес": адрес,
+                # ПОДГОТОВКА ДЛЯ ДОБАВЛЕНИЯ
+                prepared_data = {
+                    "Тип": тип_объекта,
+                    "Назначение": назначение,
+                    "Адрес": адрес,
+                    "Вид_права": итог_вид_права,
                     "Площадь": площадь,
-                    "Основание_приобретения_и_стоимость": основание,
-                    "Сведения_о_залоге_и_залогодержателе": залогодержатель,
+                    "Основание": итог_основание,
+                    "Залог": итог_залог,
+                    "Кадастровый_номер": кадастр
                 }
+                
+                add_to_category(prepared_data, category_counters)
 
-                # Определяем категорию и добавляем в соответствующий список
-                тип_lower = тип_объекта.lower() if тип_объекта else ""
-                назначение_lower = назначение.lower() if назначение else ""
-                адрес_lower = адрес.lower() if адрес else ""
+        # ДОБАВЛЕНИЕ ИЗ ИНВЕНТАРЯ (ЕСЛИ ЕСТЬ)
+        if inventory_list:
+            flat_items = []
+            for item in inventory_list:
+                # Если структура: [{"Недвижимость": [...]}, ...]
+                if item.get("Недвижимость") and isinstance(item.get("Недвижимость"), list):
+                    flat_items.extend(item["Недвижимость"])
+                # Если структура плоская или другой формат
+                elif item.get("Вид") or item.get("Тип") or item.get("Наименование"):
+                     flat_items.append(item)
 
-                if "земельн" in тип_lower or "участок" in тип_lower:
-                    земельные.append({
-                        **base_obj,
-                        "Кадастровый_номер": кадастр,
-                        "Номер_в_списке": f"{земля_counter})" if len([x for x in егрн_docs if x.get('Объект', {}).get('Вид', '').lower().find('земельн') >= 0]) > 1 else "",
-                    })
-                    земля_counter += 1
+            for item in flat_items:
+                raw_type = item.get("Вид") or item.get("Тип") or item.get("Наименование") or "Имущество"
+                # Фильтр: игнорируем транспорт если он попал в список
+                if "авто" in raw_type.lower() or "транспорт" in raw_type.lower():
+                    continue
 
-                elif ("здание" in тип_lower and "жил" in назначение_lower) or "жилой дом" in тип_lower or "жилое здание" in тип_lower:
-                    # Название с номером если домов несколько
-                    название = f"{дом_counter}) жилой дом" if дом_counter > 1 or len(жилые_дома) > 0 else "жилой дом"
-                    жилые_дома.append({
-                        **base_obj,
-                        "Вид_и_наименование": название,
-                    })
-                    дом_counter += 1
-
-                elif (
-                    "квартир" in тип_lower or 
-                    "комнат" in тип_lower or 
-                    "кв." in тип_lower or
-                    "квартира" in назначение_lower or
-                    ("помещение" in тип_lower and "жил" in назначение_lower) or
-                    ("здание" in тип_lower and ("квартир" in адрес_lower or "кв." in адрес_lower))
-                ):
-                    название = f"{квартира_counter}) {тип_объекта or 'Квартира'}" if квартира_counter > 1 or len(квартиры) > 0 else тип_объекта or "Квартира"
-                    квартиры.append({
-                        **base_obj,
-                        "Вид_и_наименование": название,
-                    })
-                    квартира_counter += 1
-
-                elif "гараж" in тип_lower or "бокс" in тип_lower or "машино-место" in тип_lower or "машиноместо" in тип_lower:
-                    название = f"{гараж_counter}) {тип_объекта}" if гараж_counter > 1 or len(гаражи) > 0 else тип_объекта
-                    гаражи.append({
-                        **base_obj,
-                        "Вид_и_наименование": название,
-                    })
-                    гараж_counter += 1
-
-                else:
-                    # Иное недвижимое имущество
-                    название = f"{иное_counter}) {тип_объекта or назначение or 'Недвижимость'}" if иное_counter > 1 or len(иное_недвижимое) > 0 else (тип_объекта or назначение or "Недвижимость")
-                    иное_недвижимое.append({
-                        **base_obj,
-                        "Вид_и_наименование_имущества": название,
-                    })
-                    иное_counter += 1
+                raw_addr = item.get("Адрес") or item.get("Местоположение") or item.get("Местонахождение") or ""
+                raw_cadastral = item.get("Кадастровый_номер") or item.get("Кадастр") or ""
+                
+                # Дедупликация
+                if raw_cadastral and raw_cadastral in processed_cadastral:
+                    continue
+                if raw_addr:
+                    addr_clean = " ".join(raw_addr.lower().split())
+                    if addr_clean in processed_addresses:
+                        continue
+                    processed_addresses.add(addr_clean)
+                
+                # Подготовка данных
+                prepared_inv = {
+                    "Тип": raw_type,
+                    "Назначение": raw_type, # Используем тип как назначение если нет другого
+                    "Адрес": raw_addr,
+                    "Вид_права": item.get("Вид_собственности") or item.get("Право") or "Собственность",
+                    "Площадь": item.get("Площадь", ""),
+                    "Основание": item.get("Основание_приобретения") or item.get("Документы_основания") or item.get("Основание", ""),
+                    "Залог": item.get("Сведения_о_залоге") or item.get("Залог", ""),
+                    "Кадастровый_номер": raw_cadastral
+                }
+                
+                add_to_category(prepared_inv, category_counters)
 
         # Если списки пустые, добавляем по одному заполнителю с пустыми полями.
         # Это предотвращает удаление строк в шаблоне при рендеринге docxtpl
@@ -7338,7 +7467,8 @@ JSON формат:
         real_estate_detailed = DocumentProcessor.format_real_estate_detailed(
             data_map.get("егрн_выписка", []), 
             owner_fio=owner_fio,
-            notification_list=data_map.get("егрн_уведомление", [])
+            notification_list=data_map.get("егрн_уведомление", []),
+            inventory_list=data_map.get("ценное_имущество", [])
         )
 
         average_income = DocumentProcessor.calculate_average_income(data_map.get("доходы", []))
