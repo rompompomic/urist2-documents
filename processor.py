@@ -2978,17 +2978,27 @@ JSON:
                     address = re.sub(r'\s+', ' ', address)
                     address = re.sub(r'\s*,\s*', ', ', address)
                 else:
-                     # Fallback поиска Адреса по тексту (ищем после "Юридический адрес")
+                     # Fallback 1: Поиск по тексту "Юридический адрес"
                     addr_block = soup.find(string=re.compile("Юридический адрес"))
                     if addr_block:
-                         # Обычно адрес идет в следующем теге или рядом
                          parent = addr_block.find_parent("div") or addr_block.find_parent("span")
                          if parent:
                              full_text = parent.get_text(" ", strip=True)
-                             # Пытаемся вытянуть адрес (иногда он в <address> или просто текстом)
                              address = full_text.replace("Юридический адрес", "").strip() 
-                             # Удаляем лишние пометки
                              address = address.split("Сведения об адресе недостоверны")[0].strip()
+                    
+                    # Fallback 2: Если адрес всё ещё не найден, ищем любой текст, похожий на адрес с индексом
+                    if not address:
+                        # Ищем паттерн: 6 цифр (индекс) + запятая + город/область
+                        # Пример: 123456, г. Москва...
+                        # Ограничиваем поиск первыми 2000 символов body, чтобы не цеплять мусор
+                        body_text = soup.body.get_text(" ", strip=True)[:5000] if soup.body else ""
+                        addr_match = re.search(r'(\d{6},\s*[А-Яа-я\.\s-]+\s*(?:г\.|город|обл\.|край|респ\.|АО|Москва|Санкт-Петербург)[^;]+)', body_text)
+                        if addr_match:
+                            potential_addr = addr_match.group(1).strip()
+                            # Простая проверка длины, чтобы не взять слишком много
+                            if 10 < len(potential_addr) < 150:
+                                address = potential_addr
 
                 candidates.append({
                     "name": raw_name,
@@ -4030,10 +4040,10 @@ JSON:
 
                     print(f"[REAL_ESTATE_DETAILED] Object: vid={vid}, cadastral={kadaster}, address={address[:50] if address else 'N/A'}")
                     
-                    # Пропускаем квартиры - они идут в отдельную таблицу описи имущества
-                    if "квартир" in vid or "комнат" in vid or "помещен" in vid:
-                        print(f"[REAL_ESTATE_DETAILED] Skipping apartment/room: {vid}")
-                        continue
+                    # Пропускаем квартиры - убрали этот фильтр, чтобы всё попадало в общую строку
+                    # if "квартир" in vid or "комнат" in vid or "помещен" in vid:
+                    #     print(f"[REAL_ESTATE_DETAILED] Skipping apartment/room: {vid}")
+                    #     continue
 
                     parts = []
                     print(f"[REAL_ESTATE_DETAILED] Creating parts for {vid}, owner_info exists: {owner_info is not None}")
@@ -4900,7 +4910,8 @@ JSON:
             if is_t_bank:
                 адрес_банка = адрес_из_реестра or "127287, г. Москва, 2-я Хуторская ул., д. 38А, стр. 26"
             else:
-                адрес_банка = адрес_из_документа or адрес_из_реестра
+                # ИЗМЕНЕНИЕ: Приоритет адреса из реестра (RusProfile), так как в БКИ часто неполный адрес ("г. Москва")
+                адрес_банка = адрес_из_реестра or адрес_из_документа
 
             тип_кредита = entry.get("Вид") or entry.get("Тип_кредита") or "Потребительский кредит"
             дата_договора = entry.get("Дата_договора") or ""
