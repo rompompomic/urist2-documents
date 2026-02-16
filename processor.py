@@ -2873,6 +2873,9 @@ JSON:
                 print(f"[RUSPROFILE] Ошибка при поиске '{company_name}': статус {response.status_code}")
                 if using_http2:
                     session.close()
+                if _depth == 0:
+                     print(f"[FALLBACK] RusProfile error ({response.status_code}), trying Zachestnyibiznes...")
+                     return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
                 return None, None
                 
             # Определяем, произошел ли редирект (RusProfile сразу открыл страницу компании)
@@ -2887,6 +2890,9 @@ JSON:
             page_title = soup.title.get_text().lower() if soup.title else ""
             if "ой!" in page_title or "вы робот" in page_title or "captcha" in page_title or "доступ ограничен" in page_title:
                 print(f"[RUSPROFILE] Обнаружена капча для '{company_name}'")
+                if _depth == 0:
+                     print(f"[FALLBACK] RusProfile captcha, trying Zachestnyibiznes...")
+                     return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
                 return None, None
 
             candidates = []
@@ -2912,6 +2918,22 @@ JSON:
                     # Считаем схожесть
                     similarity = difflib.SequenceMatcher(None, normalized_query, normalized_name).ratio()
                     
+                    # ПРОВЕРКА АББРЕВИАТУР (для случаев "Универсального Финансирования" <-> "УФ")
+                    # Если одна из строк короткая (до 5 букв), проверяем является ли она аббревиатурой другой
+                    if len(normalized_name) < 6 or len(normalized_query) < 6:
+                        # Получаем слова из длинной строки
+                        long_str = normalized_name if len(normalized_name) > len(normalized_query) else normalized_query
+                        short_str = normalized_query if len(normalized_name) > len(normalized_query) else normalized_name
+                        
+                        # Собираем первые буквы слов длинной строки
+                        words = long_str.split()
+                        acronym = "".join([w[0] for w in words if w]).lower()
+                        
+                        # Если аббревиатура совпадает с короткой строкой (или почти совпадает)
+                        if acronym == short_str.replace(" ", "") or short_str in acronym:
+                             print(f"[RUSPROFILE] Обнаружено совпадение по аббревиатуре: {short_str} <-> {long_str}")
+                             similarity = max(similarity, 0.95) # Повышаем скор до почти идеального
+
                     # Извлекаем ИНН
                     inn = None
                     for info_block in item.select("div.list-element__row-info span"):
@@ -3011,6 +3033,9 @@ JSON:
 
             if not candidates:
                 print(f"[RUSPROFILE] Ничего не найдено для '{company_name}'")
+                if _depth == 0:
+                     print(f"[FALLBACK] RusProfile не нашел, пробую Zachestnyibiznes...")
+                     return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
                 return None, None
                 
             # Выбираем первый результат (самый релевантный)
@@ -3070,21 +3095,31 @@ JSON:
                     print(f"[RUSPROFILE] ❌ Результат '{best['name']}' ОТКЛОНЕН - {rejection_reason}")
                 
                 # FALLBACK: Если было упрощение названия (удален ОПФ) и еще не пробовали полное название
-                # То сначала пробуем с полным названием (например "ПАО ВТБ" вместо "ВТБ")
                 if was_simplified and not _try_full_name:
                     print(f"[RUSPROFILE] 🔄 Пробуем поиск с полным названием (с ОПФ)...")
                     time.sleep(random.uniform(0.5, 1.0))
-                    return DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=True)
+                    res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=True)
+                    if res and res != (None, None):
+                        return res
+                    # Если поиск с полным названием не дал результата, продолжаем обычные ретраи
                 
                 # RETRY: Пробуем еще раз с новыми параметрами (User-Agent, IP, задержка)
                 if _depth < MAX_RETRIES - 1:
                     retry_delay = random.uniform(1.5, 3.0)
                     print(f"[RUSPROFILE] 🔄 Повтор попытки #{_depth + 2} через {retry_delay:.1f} сек с новыми параметрами...")
                     time.sleep(retry_delay)
-                    return DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth + 1, _try_full_name=False)
+                    res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth + 1, _try_full_name=False)
+                    if res and res != (None, None):
+                        return res
                 else:
                     print(f"[RUSPROFILE] ❌ Все попытки исчерпаны для '{company_name}'")
-                    return None, None
+
+                # Если мы здесь, значит ретраи не помогли или исчерпаны
+                if _depth == 0:
+                     print(f"[FALLBACK] RusProfile exhausted, trying Zachestnyibiznes...")
+                     return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
+                    
+                return None, None
             
             # Результат прошел все проверки
             if is_redirected:
@@ -3162,10 +3197,18 @@ JSON:
                     return None, None
             
             print(f"[RUSPROFILE] ⚠️ ИНН не найден для '{company_name}'")
+            
+            # FALLBACK: Если RusProfile не нашел даже после ретраев (depth=0)
+            if _depth == 0:
+                print(f"[FALLBACK] RusProfile не нашел/заблокировал, пробую Zachestnyibiznes...")
+                return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
+                
             return None, None
             
         except Exception as e:
             print(f"[RUSPROFILE] Критическая ошибка парсинга для '{company_name}': {e}")
+            if _depth == 0:
+                 return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
             return None, None
 
     @staticmethod
@@ -3181,6 +3224,136 @@ JSON:
         inn, _ = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name)
         return inn
     
+
+    @staticmethod
+    def parse_inn_and_address_from_zachestnyibiznes(company_name: str) -> tuple[Optional[str], Optional[str]]:
+        """Парсит ИНН и адрес организации с zachestnyibiznes.ru
+           (Fallback метод, если RusProfile не нашел)
+        """
+        if not company_name or not company_name.strip():
+            return None, None
+
+        # Очищаем имя ПЕРЕД поиском (убираем ОПФ и кавычки как для RusProfile)
+        clean_search_query = company_name
+        clean_search_query = re.sub(r'^(ООО|АО|ПАО|ЗАО|МКК|МФК|МФО)\s+', '', clean_search_query, flags=re.IGNORECASE)
+        clean_search_query = re.sub(r'["\'«»]', '', clean_search_query).strip()
+        
+        print(f"[ZACHESTNYIBIZNES] Поиск по запросу: '{clean_search_query}' (orig: '{company_name}')")
+        
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+            from urllib.parse import quote_plus
+            import difflib
+            import random
+
+            # Headers как у браузера
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+            }
+            
+            search_url = f"https://zachestnyibiznes.ru/search?query={quote_plus(clean_search_query)}"
+            response = requests.get(search_url, headers=headers, timeout=15)
+            
+            if response.status_code != 200:
+                print(f"[ZACHESTNYIBIZNES] Ошибка при поиске: статус {response.status_code}")
+                return None, None
+                
+            soup = BeautifulSoup(response.text, "lxml")
+            
+            # Выбираем карточки результатов
+            # Селектор из примера пользователя: div.background-grey-blue-light
+            items = soup.select("div.background-grey-blue-light")
+            if not items:
+                print(f"[ZACHESTNYIBIZNES] Ничего не найдено")
+                return None, None
+                
+            candidates = []
+            normalized_query = clean_search_query.lower()
+
+            for item in items:
+                # Название: ссылка внутри p.f-s-16
+                name_link = item.select_one("p.f-s-16 a")
+                if not name_link: continue
+                
+                raw_name = name_link.get_text(separator=" ", strip=True)
+                
+                # Статус: ищем 'Действующее' или 'Ликвидировано'
+                status_block = item.select_one("b.text-green") or item.select_one("b.text-trigger")
+                is_active = status_block and "Действующее" in status_block.get_text()
+                
+                if not is_active:
+                     # Если не действует - снижаем приоритет, но пока берем
+                     pass
+
+                # Адрес: параграф с svg иконкой (обычно 4-й p в блоке col-md-12)
+                # Ищем p c SVG и почтовым индексом (6 цифр)
+                address = None
+                paragraphs = item.select("div.col-md-12 > p")
+                for p in paragraphs:
+                    text = p.get_text(strip=True)
+                    if re.search(r'\d{6}', text) and ("г." in text or "обл." in text or "край" in text):
+                        address = text
+                        # Убираем SVG иконку (если текст склеился) - хотя get_text обычно ок
+                        break
+                
+                # ИНН: строка с "ИНН" и цифрами
+                inn = None
+                for p in paragraphs:
+                    text = p.get_text()
+                    if "ИНН" in text:
+                        m = re.search(r"ИНН\s*(\d{10}|\d{12})", text)
+                        if m: inn = m.group(1)
+                        break
+                
+                if not inn: continue
+
+                # Считаем релевантность названия
+                # Нормализация для сравнения (убираем ОПФ и кавычки)
+                normalized_name = raw_name.lower()
+                for entity in ["ооо", "пао", "ао", "зао"]:
+                     normalized_name = re.sub(r'\b' + entity + r'\b', '', normalized_name)
+                normalized_name = re.sub(r'["«»]', '', normalized_name).strip()
+                
+                similarity = difflib.SequenceMatcher(None, normalized_query, normalized_name).ratio()
+                
+                # Проверка аббревиатур (как в RusProfile)
+                if len(normalized_name) < 6 or len(normalized_query) < 6:
+                    long_str = normalized_name if len(normalized_name) > len(normalized_query) else normalized_query
+                    short_str = normalized_query if len(normalized_name) > len(normalized_query) else normalized_name
+                    words = long_str.split()
+                    acronym = "".join([w[0] for w in words if w]).lower()
+                    if acronym == short_str.replace(" ", "") or short_str in acronym:
+                         similarity = max(similarity, 0.95)
+
+                candidates.append({
+                    "name": raw_name,
+                    "inn": inn,
+                    "address": address,
+                    "score": similarity,
+                    "is_active": is_active
+                })
+            
+            if not candidates:
+                return None, None
+                
+            # Сортируем: сначала действующие, потом по score
+            candidates.sort(key=lambda x: (x["is_active"], x["score"]), reverse=True)
+            
+            best = candidates[0]
+            if best["score"] < 0.5:
+                 print(f"[ZACHESTNYIBIZNES] ❌ Низкое совпадение: '{best['name']}' (score={best['score']:.2f})")
+                 return None, None
+                 
+            print(f"[ZACHESTNYIBIZNES] ✅ Найден результат: '{best['name']}' (score={best['score']:.2f}, ИНН={best['inn']})")
+            return best["inn"], best["address"]
+
+        except Exception as e:
+            print(f"[ZACHESTNYIBIZNES] Ошибка: {e}")
+            return None, None
+
     @staticmethod
     def parse_address_from_rusprofile(company_name: str) -> Optional[str]:
         """Парсит только адрес организации с RusProfile.ru
