@@ -2846,7 +2846,10 @@ JSON:
             # Убираем ООО, АО, ПАО из начала строки для чистоты, если они остались
             # НО ТОЛЬКО если не указан флаг _try_full_name (тогда оставляем полное название)
             if not _try_full_name:
-                clean_search_query = re.sub(r'^(ООО|АО|ПАО|ЗАО|МКК|МФК|МФО)\s+', '', clean_search_query, flags=re.IGNORECASE)
+                # ЗАМЕНА: Разрешаем удалять несколько префиксов подряд (например "ООО МКК ...")
+                # Было: re.sub(r'^(ООО|АО|ПАО|ЗАО|МКК|МФК|МФО)\s+', '', ...)
+                # Стало: Добавлен + после группы и более широкий список
+                clean_search_query = re.sub(r'^((ООО|АО|ПАО|ЗАО|МКК|МФК|МФО|НКО|ПКО|Банк)\s+)+', '', clean_search_query, flags=re.IGNORECASE)
             
             # Запоминаем, было ли упрощение
             was_simplified = (clean_search_query != before_simplification)
@@ -3235,7 +3238,8 @@ JSON:
 
         # Очищаем имя ПЕРЕД поиском (убираем ОПФ и кавычки как для RusProfile)
         clean_search_query = company_name
-        clean_search_query = re.sub(r'^(ООО|АО|ПАО|ЗАО|МКК|МФК|МФО)\s+', '', clean_search_query, flags=re.IGNORECASE)
+        # УЛУЧШЕНИЕ: Удаляем ВСЕ префиксы подряд (ООО МКК ..., МФК ...)
+        clean_search_query = re.sub(r'^((ООО|АО|ПАО|ЗАО|МКК|МФК|МФО|НКО|ПКО|Банк)\s+)+', '', clean_search_query, flags=re.IGNORECASE)
         clean_search_query = re.sub(r'["\'«»]', '', clean_search_query).strip()
         
         print(f"[ZACHESTNYIBIZNES] Поиск по запросу: '{clean_search_query}' (orig: '{company_name}')")
