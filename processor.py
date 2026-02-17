@@ -2479,14 +2479,17 @@ JSON:
         return words
 
     @staticmethod
-    def get_bank_address(bank_name: str) -> str:
-        """Возвращает юридический адрес банка/МФО из реестров ЦБ РФ.
+    def get_bank_address(bank_name: str, inn: Optional[str] = None) -> str:
+        """Возвращает юридический адрес банка/МФО.
 
+        Приоритет:
+        1. Локальный словарь BANK_ADDRESSES
+        2. RusProfile/Zachestnyibiznes (с приоритетом ИНН)
+        3. Если ничего не найдено - пустая строка
+        
         Args:
-            bank_name: Название банка/МФО (нормализованное или каноническое)
-
-        Returns:
-            Полный адрес из реестра или фоллбэк из словаря
+            bank_name: Название организации
+            inn: ИНН организации (опционально) для более точного поиска
         """
         # Извлекаем ключевые слова для поиска
         keywords = DocumentProcessor.extract_search_keywords(bank_name)
@@ -2577,8 +2580,12 @@ JSON:
             return matches[0][1]
 
         # 3. FALLBACK: Парсим адрес с RusProfile если не нашли в локальном словаре
-        print(f"[ADDRESS_PARSER] Адрес не найден в словаре для '{bank_name}', пробую RusProfile...")
-        address_from_rusprofile = DocumentProcessor.parse_address_from_rusprofile(bank_name)
+        if inn:
+             print(f"[ADDRESS_PARSER] Адрес не найден в словаре для '{bank_name}', пробую RusProfile с ИНН {inn}...")
+        else:
+             print(f"[ADDRESS_PARSER] Адрес не найден в словаре для '{bank_name}', пробую RusProfile по названию...")
+
+        address_from_rusprofile = DocumentProcessor.parse_address_from_rusprofile(bank_name, inn)
         if address_from_rusprofile:
             return address_from_rusprofile
 
@@ -3359,15 +3366,23 @@ JSON:
             return None, None
 
     @staticmethod
-    def parse_address_from_rusprofile(company_name: str) -> Optional[str]:
-        """Парсит только адрес организации с RusProfile.ru
+    def parse_address_from_rusprofile(company_name: str, inn: Optional[str] = None) -> Optional[str]:
+        """Парсит только адрес организации с RusProfile.ru (приоритет по ИНН)
         
         Args:
             company_name: Название организации для поиска
+            inn: ИНН организации (опционально)
             
         Returns:
             Адрес или None если не найден
         """
+        # Если есть ИНН, пробуем сначала искать по нему
+        if inn:
+             _, address = DocumentProcessor.parse_inn_and_address_from_rusprofile(inn)
+             if address:
+                 return address
+
+        # Иначе ищем по названию
         _, address = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name)
         return address
 
@@ -5059,15 +5074,18 @@ JSON:
             огрн_кредитора = entry.get("ОГРН_кредитора") or ""
             
             # ИСПРАВЛЕНИЕ: GPT иногда путает ИНН и ОГРН
-            # ИНН = 10 цифр, ОГРН = 13 цифр
-            if инн_кредитора and len(инн_кредитора) == 13:
+            # ИНН = 10 цифр, ОГРН = 13 цифр (или 15)
+            if инн_кредитора and (len(инн_кредитора) == 13 or len(инн_кредитора) == 15):
                 # Это ОГРН, а не ИНН!
-                огрн_кредитора = инн_кредитора
+                if not огрн_кредитора:
+                    огрн_кредитора = инн_кредитора
                 инн_кредитора = ""
             
             # Получаем адрес СНАЧАЛА (это вызовет RusProfile и закеширует ИНН + адрес)
             адрес_из_документа = entry.get("Адрес") or entry.get("Адрес_кредитора") or ""
-            адрес_из_реестра = DocumentProcessor.get_bank_address(кредитор_canonical)
+            
+            # Теперь передаем ИНН в get_bank_address для более точного поиска
+            адрес_из_реестра = DocumentProcessor.get_bank_address(кредитор_canonical, inn=инн_кредитора if DocumentProcessor.validate_inn(инн_кредитора) else None)
             
             # ПОТОМ проверяем ИНН (теперь get_bank_inn найдет ИНН в кеше RusProfile)
             if not инн_кредитора:
@@ -5335,31 +5353,8 @@ JSON:
             
             # ИСПОЛЬЗУЕМ КАНОНИЧЕСКОЕ НАЗВАНИЕ (правильное форматирование)
             кредитор_display = первый_кредит["Кредитор_canonical"]
-
-            # Адрес: приоритет полному адресу из реестра ЦБ РФ
-            адрес_из_реестра = DocumentProcessor.get_bank_address(кредитор_display)
-            адрес_из_документа = первый_кредит["Адрес_кредитора"]
-
-            # Специальная обработка для Т-Банка - всегда используем адрес из реестра (Москва)
-            is_t_bank = (
-                "Т-БАНК" in кредитор_display.upper() or 
-                "Т БАНК" in кредитор_display.upper() or
-                "ТБАНК" in кредитор_display.upper() or
-                "ТИНЬКОФФ" in кредитор_display.upper() or
-                "TBANK" in кредитор_display.upper()
-            )
             
-            if is_t_bank:
-                адрес = адрес_из_реестра or "127287, г. Москва, 2-я Хуторская ул., д. 38А, стр. 26"
-            # Если адрес из реестра длиннее (полный), используем его
-            elif адрес_из_реестра and len(адрес_из_реестра) > 20:
-                адрес = адрес_из_реестра
-            else:
-                адрес = адрес_из_документа or адрес_из_реестра
-
-            # ИНН кредитора
-            print(f"[DEBUG_INN] Кредитор: {кредитор_display}")
-            
+            # --- НОВАЯ ЛОГИКА: Сначала найти ИНН, потом Адрес ---
             # 1. Поиск ИНН по всем кредитам этой группы (а не только в первом)
             found_inn = None
             for credit in credits_list:
@@ -5373,6 +5368,11 @@ JSON:
                         break
                     else:
                         print(f"[DEBUG_INN] ИНН из документа НЕ прошел валидацию (кредит от {credit.get('Дата_договора')}): {cand_clean} - игнорирую")
+
+            # Адрес: приоритет полному адресу из реестра ЦБ РФ, но С УЧЕТОМ ИНН
+            # Теперь передаем найденный ИНН, чтобы точно найти адрес той компании, чей ИНН в документе
+            адрес_из_реестра = DocumentProcessor.get_bank_address(кредитор_display, inn=found_inn)
+            адрес_из_документа = первый_кредит["Адрес_кредитора"]
             
             # 2. Если не нашли в группе (или он некорректный), ищем через RusProfile
             # Даже если нашли, если это банк, лучше проверить через RusProfile (там точнее)
@@ -6457,10 +6457,37 @@ JSON:
                                     found_similar = True
                                     similar_key = check_key
                                     break
-                        except:
-                            pass
+                        # Если с ±1 день не нашли, ищем по по fuzzy-совпадению кредитора при совпадающей дате и сумме
+                        if not found_similar:
+                            for ex_key in list(all_credits.keys()):
+                                try:
+                                    ex_parts = ex_key.split('|')
+                                    if len(ex_parts) < 3: continue
+                                    
+                                    ex_name_norm = ex_parts[0]
+                                    
+                                    # Если дата и сумма совпадают
+                                    # Формат ключа: "название_нормализованное|дата|сумма"
+                                    # ex_key может быть: "Трумвират|01.01.2025|10000"
+                                    # dedup_key: "Триумвират|01.01.2025|10000" (без даты - не проверяем)
+                                    
+                                    # Проверяем совпадение "хвоста" ключа (дата|сумма)
+                                    # dedup_key = "Триумвират|01.01.2025|10000" -> tail = "01.01.2025|10000"
+                                    tail_current = "|".join(dedup_key.split('|')[1:])
+                                    tail_existing = "|".join(ex_parts[1:])
+                                    
+                                    if tail_current == tail_existing:
+                                        # Дата и сумма совпали. Сравниваем название
+                                        name_ratio = difflib.SequenceMatcher(None, ex_name_norm, кредитор_normalized).ratio()
+                                        if name_ratio > 0.85: # Высокий порог для схожести
+                                            print(f"      [DEBUG] Fuzzy-совпадение кредиторов: '{ex_name_norm}' <-> '{кредитор_normalized}' ({name_ratio:.2f})")
+                                            found_similar = True
+                                            similar_key = ex_key
+                                            break
+                                except Exception as e:
+                                    pass
 
-                    # Проверяем, встречался ли уже такой кредит (точное совпадение или с погрешностью ±1 день)
+                    # Проверяем, встречался ли уже такой кредит (точное совпадение, ±1 день или fuzzy-name)
                     target_key = similar_key if found_similar else dedup_key
                     
                     if target_key in all_credits:
@@ -6490,11 +6517,47 @@ JSON:
                                 "Источник": key,
                             }
                         else:
-                            if found_similar and target_key != dedup_key:
-                                print(f"      ✓ ДУБЛИКАТ ±1день (пропущен): {сумма} <= {existing_sum}")
+                            # Даже если сумма такая же/меньше, проверяем качество данных
+                            existing_v = all_credits[target_key]
+                            existing_inn = existing_v.get("ИНН_кредитора")
+                            
+                            should_force_update = False
+                            
+                            # 1. Если у нового есть ИНН, а у старого нет - обновляем
+                            if (inn and DocumentProcessor.validate_inn(str(inn))) and (not existing_inn or not DocumentProcessor.validate_inn(str(existing_inn))):
+                                should_force_update = True
+                                print(f"      ✓ ОБНОВЛЕНИЕ (найден валидный ИНН): {existing_inn or 'нет'} -> {inn}")
+                            
+                            # 2. Если нашли fuzzy-дубликат (похожее имя), возможно новое имя правильнее?
+                            # Например "Трумвират" (без ИНН) -> "Триумвират" (с ИНН)
+                            elif found_similar and inn and not existing_inn:
+                                should_force_update = True
+                                print(f"      ✓ ОБНОВЛЕНИЕ (fuzzy-match с лучшими данными): {existing_v['Кредитор']} -> {кредитор_canonical}")
+
+                            if should_force_update:
+                                all_credits[target_key] = {
+                                    "Кредитор": кредитор_canonical,
+                                    "ИНН_кредитора": inn,
+                                    "ОГРН_кредитора": огрн or existing_v.get("ОГРН_кредитора"),
+                                    "Дата_договора": дата_договора or existing_v.get("Дата_договора"),
+                                    "Сумма_обязательства": max(сумма_обязательства, existing_v.get("Сумма_обязательства", Decimal(0))),
+                                    "Сумма_задолженности": max(сумма, existing_sum),
+                                    "Тип_кредитора": тип_кредитора,
+                                    "Вид": entry.get("Вид") or entry.get("Тип_кредита") or existing_v.get("Вид"),
+                                    "Текущая_задолженность": текущая or existing_v.get("Текущая_задолженность"),
+                                    "Текущая_просрочка": просрочка or existing_v.get("Текущая_просрочка"),
+                                    "Основной_долг": основной or existing_v.get("Основной_долг"),
+                                    "Проценты": проценты or existing_v.get("Проценты"),
+                                    "Штрафы": штрафы or existing_v.get("Штрафы"),
+                                    "Просрочка": просрочка or existing_v.get("Просрочка"),
+                                    "Источник": key,
+                                }
                             else:
-                                print(f"      ✓ ДУБЛИКАТ (пропущен): {сумма} <= {existing_sum}")
-                            print(f"      Ключ: {target_key}")
+                                if found_similar and target_key != dedup_key:
+                                    print(f"      ✓ ДУБЛИКАТ ±1день/fuzzy (пропущен): {сумма} <= {existing_sum}")
+                                else:
+                                    print(f"      ✓ ДУБЛИКАТ (пропущен): {сумма} <= {existing_sum}")
+                                print(f"      Ключ: {target_key}")
                     else:
                         # Новый кредит? Проверяем эвристически на дубликаты (разные даты, но одна суть)
                         heuristic_dup_key = None
