@@ -6457,9 +6457,12 @@ JSON:
                                     found_similar = True
                                     similar_key = check_key
                                     break
-                        # Если с ±1 день не нашли, ищем по по fuzzy-совпадению кредитора при совпадающей дате и сумме
-                        if not found_similar:
-                            for ex_key in list(all_credits.keys()):
+                        except:
+                            pass
+
+                    # 3. Если с ±1 день не нашли, ищем по fuzzy-совпадению кредитора при совпадающей дате и сумме
+                    if not found_similar and дата_договора and сумма_обязательства > 100:
+                        for ex_key in list(all_credits.keys()):
                                 try:
                                     ex_parts = ex_key.split('|')
                                     if len(ex_parts) < 3: continue
