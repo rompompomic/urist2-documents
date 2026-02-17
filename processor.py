@@ -2864,6 +2864,11 @@ JSON:
             # Убираем скобки с конца
             clean_search_query = re.sub(r'\)\)+$', '', clean_search_query) 
             
+            # Определяем, является ли запрос ИНН (состоит только из цифр, 10 или 12 знаков)
+            is_inn_search = bool(re.match(r'^\d{10,12}$', clean_search_query))
+            if is_inn_search:
+                print(f"[RUSPROFILE] Запрос определен как поиск по ИНН: {clean_search_query}")
+
             normalized_query = normalize_name_for_compare(clean_search_query)
             
             # Рандомная задержка перед запросом
@@ -2926,25 +2931,29 @@ JSON:
                     normalized_name = normalize_name_for_compare(raw_name)
                     
                     # Считаем схожесть
-                    similarity = difflib.SequenceMatcher(None, normalized_query, normalized_name).ratio()
-                    
-                    # ПРОВЕРКА АББРЕВИАТУР (для случаев "Универсального Финансирования" <-> "УФ")
-                    # Если одна из строк короткая (до 5 букв), проверяем является ли она аббревиатурой другой
-                    if len(normalized_name) < 6 or len(normalized_query) < 6:
-                        # Получаем слова из длинной строки
-                        long_str = normalized_name if len(normalized_name) > len(normalized_query) else normalized_query
-                        short_str = normalized_query if len(normalized_name) > len(normalized_query) else normalized_name
+                    if is_inn_search:
+                        # Если искали по ИНН, проверяем на совпадение ИНН, а не названия
+                        similarity = 1.0 if inn == clean_search_query else 0.0
+                    else:
+                        similarity = difflib.SequenceMatcher(None, normalized_query, normalized_name).ratio()
                         
-                        # Собираем первые буквы слов длинной строки
-                        words = long_str.split()
-                        acronym = "".join([w[0] for w in words if w]).lower()
-                        
-                        # Если аббревиатура совпадает с короткой строкой (или почти совпадает)
-                        if acronym == short_str.replace(" ", "") or short_str in acronym:
-                             print(f"[RUSPROFILE] Обнаружено совпадение по аббревиатуре: {short_str} <-> {long_str}")
-                             similarity = max(similarity, 0.95) # Повышаем скор до почти идеального
+                        # ПРОВЕРКА АББРЕВИАТУР (для случаев "Универсального Финансирования" <-> "УФ")
+                        # Если одна из строк короткая (до 5 букв), проверяем является ли она аббревиатурой другой
+                        if len(normalized_name) < 6 or len(normalized_query) < 6:
+                            # Получаем слова из длинной строки
+                            long_str = normalized_name if len(normalized_name) > len(normalized_query) else normalized_query
+                            short_str = normalized_query if len(normalized_name) > len(normalized_query) else normalized_name
+                            
+                            # Собираем первые буквы слов длинной строки
+                            words = long_str.split()
+                            acronym = "".join([w[0] for w in words if w]).lower()
+                            
+                            # Если аббревиатура совпадает с короткой строкой (или почти совпадает)
+                            if acronym == short_str.replace(" ", "") or short_str in acronym:
+                                 print(f"[RUSPROFILE] Обнаружено совпадение по аббревиатуре: {short_str} <-> {long_str}")
+                                 similarity = max(similarity, 0.95) # Повышаем скор до почти идеального
 
-                    # Извлекаем ИНН
+                    # Извлекаем Адрес
                     inn = None
                     for info_block in item.select("div.list-element__row-info span"):
                         text = info_block.get_text()
@@ -2974,8 +2983,6 @@ JSON:
             elif soup.select_one('[id^="clip_inn"]') or (soup.select_one("h1") and "ООО" in soup.select_one("h1").get_text()) or soup.find(string=re.compile("ИНН")):
                 h1 = soup.select_one("h1")
                 raw_name = h1.get_text(strip=True) if h1 else ""
-                normalized_name = normalize_name_for_compare(raw_name)
-                similarity = difflib.SequenceMatcher(None, normalized_query, normalized_name).ratio()
                 
                 # ИНН
                 inn = None
@@ -2988,6 +2995,13 @@ JSON:
                     if inn_match:
                         inn = inn_match.group(1)
 
+                if is_inn_search:
+                     # Если искали по ИНН, проверяем на совпадение ИНН, а не названия
+                     similarity = 1.0 if inn == clean_search_query else 0.0
+                else:
+                    normalized_name = normalize_name_for_compare(raw_name)
+                    similarity = difflib.SequenceMatcher(None, normalized_query, normalized_name).ratio()
+                
                 # Адрес
                 address = None
                 addr_tag = soup.select_one("#clip_address")
@@ -3077,17 +3091,22 @@ JSON:
             rejection_reason = ""
             
             # 1. Проверка similarity
-            if best['score'] < MIN_SIMILARITY_THRESHOLD:
+            if not is_inn_search and best['score'] < MIN_SIMILARITY_THRESHOLD:
                 is_valid_result = False
                 rejection_reason = f"низкое совпадение названий (score={best['score']:.2f} < {MIN_SIMILARITY_THRESHOLD})"
             
-            # 2. Проверка на стоп-слова
+            # 2. Проверка similarity при поиске по ИНН
+            elif is_inn_search and best['score'] < 1.0:
+                is_valid_result = False
+                rejection_reason = f"несовпадение ИНН (ожидался {clean_search_query}, найден {best.get('inn')})"
+
+            # 3. Проверка на стоп-слова
             elif has_stopword_in_result:
                 is_valid_result = False
                 rejection_reason = f"найдена неправильная организация (не финансовая)"
             
             # 3. Проверка типа организации
-            elif has_financial_in_query and not has_financial_in_result:
+            elif not is_inn_search and has_financial_in_query and not has_financial_in_result:
                 is_valid_result = False
                 rejection_reason = f"искали финансовую организацию, нашли другой тип"
             
@@ -6460,30 +6479,22 @@ JSON:
                         except:
                             pass
 
-                    # 3. Если с ±1 день не нашли, ищем по fuzzy-совпадению кредитора при совпадающей дате и сумме
-                    if not found_similar and дата_договора and сумма_обязательства > 100:
+                    # 3. Если с ±1 день не нашли, ищем по fuzzy-совпадению кредитора
+                    # ВАЖНО: Игнорируем разницу в сумме обязательства (ключе) для этого поиска
+                    if not found_similar:
                         for ex_key in list(all_credits.keys()):
                                 try:
                                     ex_parts = ex_key.split('|')
-                                    if len(ex_parts) < 3: continue
-                                    
-                                    ex_name_norm = ex_parts[0]
-                                    
-                                    # Если дата и сумма совпадают
-                                    # Формат ключа: "название_нормализованное|дата|сумма"
-                                    # ex_key может быть: "Трумвират|01.01.2025|10000"
-                                    # dedup_key: "Триумвират|01.01.2025|10000" (без даты - не проверяем)
-                                    
-                                    # Проверяем совпадение "хвоста" ключа (дата|сумма)
-                                    # dedup_key = "Триумвират|01.01.2025|10000" -> tail = "01.01.2025|10000"
-                                    tail_current = "|".join(dedup_key.split('|')[1:])
-                                    tail_existing = "|".join(ex_parts[1:])
-                                    
-                                    if tail_current == tail_existing:
-                                        # Дата и сумма совпали. Сравниваем название
+                                    # Ключ: Имя|Дата|Сумма
+                                    if len(ex_parts) >= 1:
+                                        ex_name_norm = ex_parts[0]
+                                        
+                                        # Сравниваем название fuzzy
                                         name_ratio = difflib.SequenceMatcher(None, ex_name_norm, кредитор_normalized).ratio()
-                                        if name_ratio > 0.85: # Высокий порог для схожести
-                                            print(f"      [DEBUG] Fuzzy-совпадение кредиторов: '{ex_name_norm}' <-> '{кредитор_normalized}' ({name_ratio:.2f})")
+                                        
+                                        # Убрана проверка дат и сумм по требованию
+                                        if name_ratio > 0.85: 
+                                            print(f"      [DEBUG] Fuzzy-совпадение (только по названию): '{ex_name_norm}' <-> '{кредитор_normalized}' ({name_ratio:.2f})")
                                             found_similar = True
                                             similar_key = ex_key
                                             break
