@@ -2657,6 +2657,7 @@ JSON:
 
         try:
             # Импорты внутри метода, чтобы не засорять глобальную область, если они нужны только тут
+            import re
             import random
             import difflib
             import requests
@@ -5393,6 +5394,9 @@ JSON:
             адрес_из_реестра = DocumentProcessor.get_bank_address(кредитор_display, inn=found_inn)
             адрес_из_документа = первый_кредит["Адрес_кредитора"]
             
+            # Определяем финальный адрес для использования
+            адрес = адрес_из_реестра if адрес_из_реестра else адрес_из_документа
+
             # 2. Если не нашли в группе (или он некорректный), ищем через RusProfile
             # Даже если нашли, если это банк, лучше проверить через RusProfile (там точнее)
             should_check_rusprofile = getattr(DocumentProcessor, "SHOULD_CHECK_RUSPROFILE", False)
