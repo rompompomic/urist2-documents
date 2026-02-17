@@ -6527,20 +6527,20 @@ JSON:
                             should_force_update = False
                             
                             # 1. Если у нового есть ИНН, а у старого нет - обновляем
-                            if (inn and DocumentProcessor.validate_inn(str(inn))) and (not existing_inn or not DocumentProcessor.validate_inn(str(existing_inn))):
+                            if (инн and DocumentProcessor.validate_inn(str(инн))) and (not existing_inn or not DocumentProcessor.validate_inn(str(existing_inn))):
                                 should_force_update = True
-                                print(f"      ✓ ОБНОВЛЕНИЕ (найден валидный ИНН): {existing_inn or 'нет'} -> {inn}")
+                                print(f"      ✓ ОБНОВЛЕНИЕ (найден валидный ИНН): {existing_inn or 'нет'} -> {инн}")
                             
                             # 2. Если нашли fuzzy-дубликат (похожее имя), возможно новое имя правильнее?
                             # Например "Трумвират" (без ИНН) -> "Триумвират" (с ИНН)
-                            elif found_similar and inn and not existing_inn:
+                            elif found_similar and инн and not existing_inn:
                                 should_force_update = True
                                 print(f"      ✓ ОБНОВЛЕНИЕ (fuzzy-match с лучшими данными): {existing_v['Кредитор']} -> {кредитор_canonical}")
 
                             if should_force_update:
                                 all_credits[target_key] = {
                                     "Кредитор": кредитор_canonical,
-                                    "ИНН_кредитора": inn,
+                                    "ИНН_кредитора": инн,
                                     "ОГРН_кредитора": огрн or existing_v.get("ОГРН_кредитора"),
                                     "Дата_договора": дата_договора or existing_v.get("Дата_договора"),
                                     "Сумма_обязательства": max(сумма_обязательства, existing_v.get("Сумма_обязательства", Decimal(0))),
