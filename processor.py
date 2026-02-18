@@ -2646,6 +2646,13 @@ JSON:
         Returns:
             Кортеж (ИНН, адрес) или (None, None) если не найдено
         """
+        # DEBUG: Проверка аргументов при входе
+        if _try_abbreviation:
+            # DEBUG: Принудительно сбрасываем глубину, если она некорректно передалась как >= 3
+            if _depth >= 3:
+                print(f"[DEBUG_ARGS] _try_abbreviation=True but _depth={_depth}. FORCING RESET TO 0.")
+                _depth = 0
+
         if not company_name or not company_name.strip():
             return None, None
         
@@ -3212,8 +3219,10 @@ JSON:
                 else:
                     print(f"[RUSPROFILE] ❌ Результат '{best['name']}' ОТКЛОНЕН - {rejection_reason}")
                 
+
                 # FALLBACK: Если было упрощение названия (удален ОПФ) и еще не пробовали полное название
-                if was_simplified and not _try_full_name:
+                # ВАЖНО: Если мы уже в режиме аббревиатуры, этот fallback может быть не нужен или должен учитывать флаг
+                if was_simplified and not _try_full_name and not _try_abbreviation:
                     print(f"[RUSPROFILE] 🔄 Пробуем поиск с полным названием (с ОПФ)...")
                     time.sleep(random.uniform(0.5, 1.0))
                     res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=True)
@@ -3223,22 +3232,62 @@ JSON:
 
                 # FALLBACK 2: Если все попытки провалились - пробуем ПОСЛЕДНЮЮ надежду: поиск по аббревиатуре
                 # Пример: "МКК Универсального Финансирования" -> "МКК УФ"
+                # ВАЖНО: Делаем это ТОЛЬКО на последнем уровне глубины, перед тем как сдаться
                 if not _try_abbreviation and _depth == MAX_RETRIES - 1:
                      print(f"[RUSPROFILE] 🔄 Последняя попытка: пробуем поиск по АББРЕВИАТУРЕ...")
-                     time.sleep(1.0)
-                     res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth + 1, _try_full_name=False, _try_abbreviation=True)
+                     # Сбрасываем depth в 0, но ставим флаг abbreviation, чтобы пройти как новая попытка
+                     # Используем self.parse_... если мы внутри класса, или DocumentProcessor.parse_...
+                     # Проблема в том, что рекурсия возвращает результат, но если он None, мы идем дальше к "Все попытки исчерпаны"
+                     # И главное - мы передаем company_name как есть, а логика превращения в аббревиатуру должна быть ВНУТРИ вызова с флагом
+                     
+                     # ВАЖНО: Используем класс из текущего модуля через __class__ если бы это был метод экземпляра
+                     # Но тут статический метод. Используем явно имя класса DocumentProcessor.
+                     # Если проблема с reload, то DocumentProcessor может указывать на старую версию класса.
+                     # Попробуем получить ссылку на функцию через globals() если возможно, или просто рекурсию через имя класса.
+                     
+                     print(f"[DEBUG_RECURSION] Calling recursive parse with _depth=0 for '{company_name}'")
+                     try:
+                         # Прямой вызов через класс
+                         res = DocumentProcessor.parse_inn_and_address_from_rusprofile(
+                             company_name, 
+                             0,     # _depth 
+                             False, # _try_full_name 
+                             True   # _try_abbreviation
+                         )
+                     except Exception as e:
+                         print(f"[DEBUG_ERROR] Recursive call failed: {e}")
+                         res = None
+                     
+                     # Если поиск по аббревиатуре что-то нашел - возвращаем
                      if res and res != (None, None):
                         return res
-
+                     
+                     # Если не нашел - не нужно печатать "Все попытки исчерпаны" еще раз, 
+                     # это сделает блок else ниже, но мы хотим избежать дублирования
+                
                 # RETRY: Пробуем еще раз с новыми параметрами (User-Agent, IP, задержка)
-                if _depth < MAX_RETRIES - 1:
+                if not _try_abbreviation and _depth < MAX_RETRIES - 1:
                     retry_delay = random.uniform(1.5, 3.0)
                     print(f"[RUSPROFILE] 🔄 Повтор попытки #{_depth + 2} через {retry_delay:.1f} сек с новыми параметрами...")
                     time.sleep(retry_delay)
                     res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth + 1, _try_full_name=False)
                     if res and res != (None, None):
                         return res
-                else:
+                elif _try_abbreviation and _depth < MAX_RETRIES - 1:
+                     # Если мы В РЕЖИМЕ АББРЕВИАТУРЫ, тоже даем пару попыток (например, капча или сбой сети)
+                     # Но только если это не последняя попытка
+                     retry_delay = random.uniform(1.5, 3.0)
+                     print(f"[RUSPROFILE] 🔄 АББРЕВИАТУРА: Повтор попытки #{_depth + 2} через {retry_delay:.1f} сек...")
+                     time.sleep(retry_delay)
+                     res = DocumentProcessor.parse_inn_and_address_from_rusprofile(
+                         company_name, 
+                         _depth + 1, 
+                         _try_full_name=False, 
+                         _try_abbreviation=True
+                     )
+                     if res and res != (None, None):
+                        return res
+                elif not _try_abbreviation:
                     print(f"[RUSPROFILE] ❌ Все попытки исчерпаны для '{company_name}'")
 
                 # Если мы здесь, значит ретраи не помогли или исчерпаны
