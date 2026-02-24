@@ -6701,21 +6701,69 @@ JSON:
                             pass
 
                     # 3. Если с ±1 день не нашли, ищем по fuzzy-совпадению кредитора
-                    # ВАЖНО: Игнорируем разницу в сумме обязательства (ключе) для этого поиска
+                    # ВАЖНО: Строгая проверка дат и сумм, иначе разные кредиты одного банка сольются!
                     if not found_similar:
                         for ex_key in list(all_credits.keys()):
                                 try:
                                     ex_parts = ex_key.split('|')
+                                    cur_parts = dedup_key.split('|')
+                                    
                                     # Ключ: Имя|Дата|Сумма
-                                    if len(ex_parts) >= 1:
+                                    if len(ex_parts) >= 3 and len(cur_parts) >= 3:
                                         ex_name_norm = ex_parts[0]
+                                        ex_date = ex_parts[1]
+                                        ex_sum_init = ex_parts[2]
+                                        
+                                        cur_date = cur_parts[1]
+                                        cur_sum_init = cur_parts[2]
                                         
                                         # Сравниваем название fuzzy
                                         name_ratio = difflib.SequenceMatcher(None, ex_name_norm, кредитор_normalized).ratio()
                                         
-                                        # Убрана проверка дат и сумм по требованию
-                                        if name_ratio > 0.85: 
-                                            print(f"      [DEBUG] Fuzzy-совпадение (только по названию): '{ex_name_norm}' <-> '{кредитор_normalized}' ({name_ratio:.2f})")
+                                        if name_ratio > 0.85:
+                                            # Если названия похожи, то ОБЯЗАТЕЛЬНО проверяем дату или сумму!
+                                            
+                                            # 1. Проверка ДАТЫ
+                                            dates_match = False
+                                            has_dates = (ex_date != "NO_DATE" and cur_date != "NO_DATE")
+                                            
+                                            if has_dates:
+                                                 dates_match = (ex_date == cur_date)
+                                            
+                                            # 2. Проверка СУММЫ
+                                            sums_match = False
+                                            has_sums = (ex_sum_init != "NO_INIT" and cur_sum_init != "NO_INIT")
+                                            
+                                            if has_sums:
+                                                sums_match = (str(ex_sum_init) == str(cur_sum_init))
+                                            
+                                            # ЛОГИКА РЕШЕНИЯ О СЛИЯНИИ (MERGE DECISION)
+                                            should_merge = False
+                                            
+                                            # А. Если есть даты у обоих - мержим ТОЛЬКО если даты совпадают
+                                            if has_dates:
+                                                if dates_match:
+                                                    should_merge = True
+                                                else:
+                                                    should_merge = False # Даты разные -> разные кредиты
+                                            
+                                            # Б. Если дат нет (хотя бы у одного), пробуем по сумме
+                                            else:
+                                                # Если ключи имеют 4 части (т.е. содержат текущую сумму как 4-й элемент), 
+                                                # сравниваем её, так как NO_INIT в 3-й части нам не поможет
+                                                if len(ex_parts) == 4 and len(cur_parts) == 4:
+                                                     sums_match = (str(ex_parts[3]) == str(cur_parts[3]))
+                                                     should_merge = sums_match
+                                                elif has_sums and sums_match:
+                                                    should_merge = True
+                                                else:
+                                                    should_merge = False # Без дат и без совпадения сумм -> разные
+                                            
+                                            if not should_merge:
+                                                print(f"      [DEBUG] Не мержим '{ex_name_norm}' и '{кредитор_normalized}' (даты={dates_match}, суммы={sums_match})")
+                                                continue
+                                                
+                                            print(f"      [DEBUG] Fuzzy-совпадение (Название+Дата/Сумма): '{ex_name_norm}' <-> '{кредитор_normalized}'")
                                             found_similar = True
                                             similar_key = ex_key
                                             break
