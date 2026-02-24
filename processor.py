@@ -959,6 +959,11 @@ JSON:
 ВАЖНОЕ ЗАМЕЧАНИЕ! НЕ НУЖНО ОТДЕЛЬНО БРАТЬ "Общая задолженность" и "Просроченная задолженность" КАК ОТДЕЛЬНЫЕ КРЕДИТЫ. ЭТО ОДИН И ТОТ ЖЕ КРЕДИТ!!! "Общая задолженность" НУЖНО ВЗЯТЬ ТОЛЬКО ЭТО!
     - Короче, запрещено брать данные из двух столбцов и указывать их как два договора, берем только "Общая задолженность"
 
+ИНСТРУКЦИЯ ПО ОБРАБОТКЕ ЧАСТЕЙ ДОКУМЕНТА (БАТЧИ):
+1. Ты можешь получить часть документа, которая начинается с середины списка кредитов.
+2. Если видишь таблицу или список кредитов без явного заголовка "ДЕЙСТВУЮЩИЕ КРЕДИТНЫЕ ДОГОВОРЫ" — ЭТО ПРОДОЛЖЕНИЕ! ОБЯЗАТЕЛЬНО ИЗВЛЕКАЙ ВСЕ КРЕДИТЫ С ЭТОЙ СТРАНИЦЫ!
+3. Не пропускай кредиты только потому, что не нашел заголовок раздела. Ищи структуру кредитных записей.
+
 СНАЧАЛА найди ИНН должника на первой странице отчета (это 12-значное число физического лица). В разделе "СУБЪЕКТ КРЕДИТНОЙ ИСТОРИИ".
 
 Найди таблицу "ДЕЙСТВУЮЩИЕ КРЕДИТНЫЕ ДОГОВОРЫ" или "АКТИВНЫЕ ДОГОВОРЫ", когда наткнешься на таблицу "ЗАКРЫТЫЕ КРЕДИТНЫЕ ДОГОВОРЫ", начинай игнорировать договоры и не учитывать их.
@@ -1033,7 +1038,11 @@ JSON:
         "отчет_бки": {
             "keywords": ["скоринг", "индивидуальный рейтинг", "кредитная история", "бюро кредитных историй", "кредитный рейтинг", "отчет бки", "скоринговый балл"],
             "prompt": """
-            
+
+ИНСТРУКЦИЯ ПО ОБРАБОТКЕ ЧАСТЕЙ ДОКУМЕНТА (БАТЧИ):
+1. Если видишь таблицу "Действующие кредиты..." или просто список кредитов без явного заголовка — ИЗВЛЕКАЙ ИХ!
+2. Не пропускай данные только потому, что страница начинается с середины таблицы.
+
 В отчете таблица "Действующие кредиты, займы, карты".
 
 Нормализуй название банка, МФК, МКК.
@@ -1095,6 +1104,10 @@ JSON (СТРОГО этот формат):
         "отчет_нбки": {
             "keywords": ["нбки отчет", "отчет нбки", "национальное бюро кредитных историй", "кредитный отчет для субъекта", "кредитная история нбки", "nbch", "nbki"],
             "prompt": """
+
+ИНСТРУКЦИЯ ПО ОБРАБОТКЕ ЧАСТЕЙ ДОКУМЕНТА (БАТЧИ):
+1. Если видишь таблицу или список кредитов без явного заголовка "Обязательства и их исполнение" — ЭТО ПРОДОЛЖЕНИЕ! ОБЯЗАТЕЛЬНО ИЗВЛЕКАЙ ВСЕ КРЕДИТЫ С ЭТОЙ СТРАНИЦЫ!
+2. Не пропускай кредиты только потому, что не нашел заголовок раздела. Ищи структуру кредитных записей.
 
 СНАЧАЛА найди ИНН должника на первой странице отчета (это 12-значное число физического лица). Указано в разделе "Субъект кредитной истории", инн находится в строке "ИНН (или аналог для иностр.)", бывает так что написано "450164262865 (проверен в ФНС)", то что в скобках игнорируй, нужно только 12-значное число.
 
@@ -8765,7 +8778,7 @@ JSON формат:
             # Create assistant with file_search
             print(f"      Создание ассистента...", end=" ", flush=True)
             assistant = client.beta.assistants.create(
-                model="gpt-4o-mini",  # Самая мощная доступная модель для Assistants API
+                model="gpt-4o",  # Самая мощная модель для максимального качества
                 tools=[{"type": "file_search"}],
                 temperature=0,  # Максимальная точность
             )
@@ -8791,35 +8804,47 @@ JSON формат:
             )
 
             # Wait for completion
-            max_wait = 120  # 2 minutes timeout
+            max_wait = 300  # 5 minutes timeout for complex reports
             elapsed = 0
             while run.status in ["queued", "in_progress"]:
                 time.sleep(2)
                 elapsed += 2
                 run = client.beta.threads.runs.retrieve(
                     thread_id=thread.id,
-                    run_id=run.id
+                    run_id=run.id,
                 )
                 if elapsed >= max_wait:
+                    print(f"      [TIMEOUT] Превышено время ожидания от Assistants API")
                     raise TimeoutError("Assistants API timeout")
-
-            print(f"OK")
-
-            # Check for errors
-            if run.status == "failed":
+            
+            if run.status == "completed":
+                print(f"OK")
+            elif run.status == "failed":
                 error_msg = f"Assistant failed: {run.last_error.message if run.last_error else 'Unknown error'}"
+                print(f"      [FAILED] {error_msg}")
                 return {}, error_msg
+            else:
+                print(f"      [STATUS] {run.status}")
 
             # Get response
             messages = client.beta.threads.messages.list(thread_id=thread.id)
-            response_text = messages.data[0].content[0].text.value
-
+            if not messages.data:
+                return {}, "No messages in thread"
+                
+            response_obj = messages.data[0].content[0]
+            if hasattr(response_obj, 'text'):
+                response_text = response_obj.text.value
+            else:
+                response_text = str(response_obj)
+            
             # Parse JSON
             cleaned = DocumentProcessor.clean_json_response(response_text)
             try:
+                if not cleaned:
+                    raise ValueError("Empty response after cleaning")
                 data = json.loads(cleaned)
                 error = None
-            except json.JSONDecodeError as e:
+            except (json.JSONDecodeError, ValueError) as e:
                 # Try to extract JSON from markdown or text
                 import re
                 json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
@@ -8885,6 +8910,45 @@ JSON формат:
         if doc_type in ["отчет_окб", "отчет_бки", "отчет_нбки"]:
             print(f"      [CREDIT] Обработка кредитного отчета")
             
+            # Включаем режим Assistants API для сохранения контекста на сервере
+            USE_ASSISTANTS_API = True
+            
+            if USE_ASSISTANTS_API:
+                print(f"      [MODE] Используем Assistants API (контекст на сервере) для 100% извлечения кредитов")
+                # Для Assistants API нужен полный промпт, но без инструкций по батчам
+                full_prompt = base_prompt.replace("ИНСТРУКЦИЯ ПО ОБРАБОТКЕ ЧАСТЕЙ ДОКУМЕНТА (БАТЧИ):", "").replace("1. Если видишь таблицу...", "")
+                
+                try:
+                    data, error = self.process_pdf_with_assistants(pdf_path, full_prompt)
+                    if error:
+                        print(f"      [ERROR] Ошибка Assistants API: {error}")
+                        # Fallback to standard batch processing if Assistants API fails
+                        print(f"      [FALLBACK] Переход на стандартную обработку изображений...")
+                    else:
+                        DocumentProcessor.log_memory("После обработки через Assistants API")
+                        
+                        # Сохраняем результат
+                        try:
+                            json_path = pdf_path.with_suffix(".json")
+                            with open(json_path, "w", encoding="utf-8") as f:
+                                json.dump(data, f, ensure_ascii=False, indent=2)
+                        except Exception as e:
+                            print(f"      [WARNING] Не удалось сохранить JSON: {e}")
+                        
+                        duration = time.time() - start_time
+                        print(f"   ✓ Готово за {duration:.1f} сек")
+                        
+                        return DocumentOutput(
+                            filename=pdf_path.name,
+                            doc_type=doc_type,
+                            extracted_data=data,
+                            raw_text="",
+                            status="success"
+                        )
+                except Exception as e:
+                    print(f"      [ERROR] Критическая ошибка Assistants API: {str(e)}")
+                    print(f"      [FALLBACK] Переход на стандартную обработку изображений...")
+
             # Конвертируем в изображения ПОСТРАНИЧНОО для экономии памяти
             print(f"      Конвертация PDF в изображения...", end=" ", flush=True)
             pdf = pdfium.PdfDocument(str(pdf_path))
