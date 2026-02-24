@@ -9000,7 +9000,7 @@ JSON формат:
             print(f"      [CREDIT] Обработка кредитного отчета")
             
             # Включаем режим Assistants API для сохранения контекста на сервере
-            USE_ASSISTANTS_API = True
+            USE_ASSISTANTS_API = False
             
             if USE_ASSISTANTS_API:
                 print(f"      [MODE] Используем Assistants API (контекст на сервере) для 100% извлечения кредитов")
