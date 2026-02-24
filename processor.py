@@ -8938,12 +8938,22 @@ JSON формат:
                         duration = time.time() - start_time
                         print(f"   ✓ Готово за {duration:.1f} сек")
                         
+                        # Count pages for the report
+                        try:
+                            pdf_doc = pdfium.PdfDocument(str(pdf_path))
+                            num_pages_count = len(pdf_doc)
+                            pdf_doc.close()
+                        except:
+                            num_pages_count = 0
+
                         return DocumentOutput(
-                            filename=pdf_path.name,
-                            doc_type=doc_type,
-                            extracted_data=data,
-                            raw_text="",
-                            status="success"
+                            file=pdf_path.name,
+                            document_type=doc_type,
+                            pages=num_pages_count,
+                            processing_time_seconds=duration,
+                            data=data,
+                            error=None,
+                            extracted_text=""
                         )
                 except Exception as e:
                     print(f"      [ERROR] Критическая ошибка Assistants API: {str(e)}")
