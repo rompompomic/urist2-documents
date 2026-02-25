@@ -10,6 +10,7 @@ openai>=1.0.0
 python-docx>=0.8.11
 docxtpl>=0.16.0
 pypdfium2>=4.30.0
+pymupdf>=1.22.0
 Pillow>=10.0.0
 
 # Utilities
