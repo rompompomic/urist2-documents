@@ -3925,10 +3925,10 @@ JSON:
 
         try:
             response = client.chat.completions.create(
-                model="gpt-5-mini",
+                model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=5000
+                max_completion_tokens=5000
             )
             
             result_text = response.choices[0].message.content.strip()
@@ -8034,10 +8034,10 @@ JSON формат:
 
         try:
             response = openai_client.chat.completions.create(
-                model="gpt-5-mini",
+                model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=1500
+                max_completion_tokens=1500
             )
             
             result = response.choices[0].message.content.strip()
@@ -9227,7 +9227,7 @@ JSON формат:
                         {"role": "user", "content": f"Вот часть кредитного отчета (страницы {i*CHUNK_SIZE+1}-{(i+1)*CHUNK_SIZE}). Извлеки данные:\n\n{chunk_text}"}
                     ],
                     temperature=0.1,
-                    max_tokens=4000,
+                    max_completion_tokens=4000,
                     response_format={"type": "json_object"}
                 )
                 

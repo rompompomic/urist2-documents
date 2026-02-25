@@ -236,13 +236,13 @@ def generate_fio_fields(fio: str, devichya_familiya: str = None) -> dict:
     
     try:
         response = client.chat.completions.create(
-            model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
+            model=os.getenv('OPENAI_MODEL', 'gpt-5-mini'),
             messages=[
                 {"role": "system", "content": "Ты помощник для обработки русских ФИО и склонения по падежам. Отвечай только в формате JSON."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.1,
-            max_tokens=500
+            max_completion_tokens=500
         )
         
         result_text = response.choices[0].message.content.strip()
