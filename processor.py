@@ -588,7 +588,7 @@ JSON:
             "keywords": ["выписка из единого государственного реестра недвижимости", "выписка из егрн", "егрн", "сведения из егрн", "кадастровый номер", "кадастровая стоимость", "объекта недвижимости", "сведения егрн", "реестр недвижимости", "росреестр", "единый государственный реестр недвижимости", "право собственности", "выписка росреестр", "недвижимости о правах отдельного лица", "имевшиеся имеющиеся", "объекты недвижимости", "филиал публично правовой компании", "росреестра по республике", "онлайн выписка из егрн"],
             "prompt": """Выписка из ЕГРН или Сведения из ЕГРН (в т.ч. с Госуслуг) с характеристиками объекта недвижимости.
 
-!!! ВНИМАНИЕ: Извлекай АБСОЛЮТНО ВСЕ объекты, упомянутые в документе оформленные на должника, должник - {debtor_fio}!!!
+!!! ВНИМАНИЕ: Извлекай АБСОЛЮТНО ВСЕ объекты, упомянутые в документе оформленные на должника, должник - {debtor_fio} - если есть опечатка, ничего страшного!!!
 Если в документе есть кадастровый номер и адрес - это объект. Извлекай его!
 
 АЛГОРИТМ РАБОТЫ (СТРОГО ПО ПОРЯДКУ):
@@ -1885,7 +1885,7 @@ JSON:
             "keywords": ["свидетельство о заключении брака", "свидетельство о браке", "копия свидетельства о заключении брака", "копия свидетельства о браке", "запись акта о заключении брака"],
             "prompt": """Ты обрабатываешь свидетельство о заключении брака (РФ или других стран СНГ).
 
-🔴 КОНТЕКСТ: ФИО ДОЛЖНИКА = {debtor_fio}
+🔴 КОНТЕКСТ: ФИО ДОЛЖНИКА = {debtor_fio} - если есть опечатка, ничего страшного
 
 ТВОЯ ЗАДАЧА: Найти в документе СУПРУГА должника (мужа или жену) и вернуть ТОЛЬКО его/её данные.
 
@@ -10457,55 +10457,22 @@ JSON (СТРОГО этот формат):
         # Переменная для хранения ФИО должника (извлекается из паспорта)
         debtor_fio = ""
 
-        # Умная сортировка: Паспорт -> Остальное
-        files_to_process_first = []
-        files_to_process_later = []
-        
-        for check_pdf in pdf_list:
-            if "паспорт" in check_pdf.name.lower() and "супруг" not in check_pdf.name.lower(): # Исключаем паспорт супруга из ПЕРВООЧЕРЕДНОЙ обработки
-                 files_to_process_first.append(check_pdf)
-            else:
-                 files_to_process_later.append(check_pdf)
-
-        # Сначала обрабатываем паспорта, чтобы найти ФИО
-        for pdf in files_to_process_first:
+        for idx, pdf in enumerate(sorted_pdf_list, 1):
+            file_start_time = time_module.time()
+            print(f"[TIMING] Processing file {idx}/{len(sorted_pdf_list)}: {pdf.name}")
             try:
-                print(f"[PROCESS] Обработка приоритетного файла: {pdf.name}")
-                result = self.process_pdf(pdf) # Тут ФИО еще не знаем
-                
-                # Если нашли паспорт - извлекаем ФИО для контекста других доков
-                if result.document_type == "паспорт" and not result.error:
-                     fio_parts = [
-                         result.data.get("Фамилия", ""),
-                         result.data.get("Имя", ""),
-                         result.data.get("Отчество", "")
-                     ]
-                     # Собираем ФИО, исключая пустые части
-                     full_name = " ".join(filter(None, fio_parts)).strip()
-                     
-                     # Фолбек на общее поле ФИО, если по частям не собралось
-                     if not full_name:
-                         full_name = result.data.get("ФИО", "")
-                         
-                     if full_name:
-                         debtor_fio = full_name
-                         print(f"[CONTEXT] Установлено ФИО должника из паспорта: {debtor_fio}")
-
-                results.append(result)
-                aggregated.setdefault(result.document_type, []).append(result.data)
-                
-            except Exception as exc:
-                print(f"[ERROR] Ошибка при обработке паспорта {pdf.name}: {exc}")
-
-        # Потом обрабатываем остальные файлы с уже известным ФИО
-        for pdf in files_to_process_later:
-            try:
-                print(f"[PROCESS] Обработка файла: {pdf.name} (Контекст ФИО: '{debtor_fio}')")
                 result = self.process_pdf(pdf, debtor_fio=debtor_fio)
-                results.append(result)
-                aggregated.setdefault(result.document_type, []).append(result.data)
-            except Exception as exc:
-                print(f"[ERROR] Ошибка при обработке {pdf.name}: {exc}")
+            except Exception as exc:  # noqa: BLE001
+                result = DocumentOutput(
+                    file=pdf.name,
+                    document_type="ошибка",
+                    pages=0,
+                    processing_time_seconds=0.0,
+                    data={},
+                    error=str(exc),
+                )
+            file_elapsed = time_module.time() - file_start_time
+            print(f"[TIMING] File {pdf.name} completed in {file_elapsed:.1f}s")
             results.append(result)
             
             # DEBUG: Проверяем почему данные не добавляются в aggregated
