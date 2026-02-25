@@ -33,7 +33,7 @@ import psutil  # Для мониторинга памяти
 load_dotenv()
 
 # === Processing settings ===
-GPT_MODEL = "gpt-4o"  # Using GPT-4o with vision capabilities
+GPT_MODEL = "gpt-5-mini"  # Using GPT-5-mini with vision capabilities
 TEMPLATE_DOCX = Path("templ") / "Заявление на банкротство.docx"
 FILLED_TEMPLATE_SUFFIX = " (заполненное)"
 OUTPUT_DIR = Path("resultdoc")  # Папка для всех готовых документов
@@ -588,7 +588,7 @@ JSON:
             "keywords": ["выписка из единого государственного реестра недвижимости", "выписка из егрн", "егрн", "сведения из егрн", "кадастровый номер", "кадастровая стоимость", "объекта недвижимости", "сведения егрн", "реестр недвижимости", "росреестр", "единый государственный реестр недвижимости", "право собственности", "выписка росреестр", "недвижимости о правах отдельного лица", "имевшиеся имеющиеся", "объекты недвижимости", "филиал публично правовой компании", "росреестра по республике", "онлайн выписка из егрн"],
             "prompt": """Выписка из ЕГРН или Сведения из ЕГРН (в т.ч. с Госуслуг) с характеристиками объекта недвижимости.
 
-!!! ВНИМАНИЕ: Извлекай АБСОЛЮТНО ВСЕ объекты, упомянутые в документе !!!
+!!! ВНИМАНИЕ: Извлекай АБСОЛЮТНО ВСЕ объекты, упомянутые в документе оформленные на должника, должник - {debtor_fio}!!!
 Если в документе есть кадастровый номер и адрес - это объект. Извлекай его!
 
 АЛГОРИТМ РАБОТЫ (СТРОГО ПО ПОРЯДКУ):
@@ -3925,7 +3925,7 @@ JSON:
 
         try:
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=5000
@@ -7446,7 +7446,7 @@ JSON формат:
 
         try:
             response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 messages=[{"role": "user", "content": prompt}],
             )
             
@@ -8034,7 +8034,7 @@ JSON формат:
 
         try:
             response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=1500
@@ -8945,7 +8945,7 @@ JSON формат:
 
     @staticmethod
     def process_pdf_with_gpt(pdf_path: Path, prompt: str) -> tuple[str, Optional[int]]:
-        """Process PDF file directly with GPT-4o (for ОКБ reports).
+        """Process PDF file directly with GPT-5.1 (for ОКБ reports).
         
         Returns:
             Tuple of (response_text, error_code) where error_code is HTTP status for errors or None for success
@@ -9048,7 +9048,7 @@ JSON формат:
             # Create assistant with file_search
             print(f"      Создание ассистента...", end=" ", flush=True)
             assistant = client.beta.assistants.create(
-                model="gpt-4o",  # Самая мощная модель для максимального качества
+                model="gpt-5.1",  # Самая мощная модель для максимального качества
                 tools=[{"type": "file_search"}],
                 temperature=0.1,  # Небольшая вариативность может помочь с форматированием
             )
@@ -9162,7 +9162,7 @@ JSON формат:
             for i in range(total_pages):
                 page = doc[i]
                 try:
-                    # Use simple text extraction which is robust and sufficient for GPT-4o
+                    # Use simple text extraction which is robust and sufficient for GPT-5.1
                     text = page.get_text("text") 
                 except Exception as e:
                     print(f"      [TEXT] Error extracting page {i+1}: {e}")
@@ -9221,7 +9221,7 @@ JSON формат:
                 full_system_prompt = base_prompt + "\n\nВАЖНО: Верни ТОЛЬКО валидный JSON. Не добавляй markdown разметку. Просто текст JSON."
                 
                 completion = client.chat.completions.create(
-                    model="gpt-4o",
+                    model="gpt-5.1",
                     messages=[
                         {"role": "system", "content": full_system_prompt},
                         {"role": "user", "content": f"Вот часть кредитного отчета (страницы {i*CHUNK_SIZE+1}-{(i+1)*CHUNK_SIZE}). Извлеки данные:\n\n{chunk_text}"}
@@ -9267,7 +9267,7 @@ JSON формат:
         return final_data, None
 
     def process_pdf(self, pdf_path: Path, debtor_fio: str = "") -> DocumentOutput:
-        """Process PDF document with all pages at once using GPT-5 Vision.
+        """Process PDF document with all pages at once using GPT-5.1 Vision.
         
         Args:
             pdf_path: Path to PDF file
@@ -9295,8 +9295,8 @@ JSON формат:
         if debtor_fio and "{debtor_fio}" in base_prompt:
             base_prompt = base_prompt.replace("{debtor_fio}", debtor_fio)
 
-        # Выбираем модель: для критически важных документов (счета, ЕГРН) используем gpt-4o
-        current_model = "gpt-4o" if doc_type in ["счета", "егрн_выписка"] else GPT_MODEL
+        # Выбираем модель: для критически важных документов (счета, ЕГРН) используем gpt-5.1
+        current_model = "gpt-5.1" if doc_type in ["счета", "егрн_выписка"] else GPT_MODEL
         
         print(f"   > {pdf_path.name}")
         print(f"      Тип: {doc_type} (Модель: {current_model})")
@@ -10270,7 +10270,7 @@ JSON (СТРОГО этот формат):
 ВЕРНИ ТОЛЬКО JSON!"""
 
                 try:
-                    print(f"      Обработка GPT-4o ({len(pages)} стр.)...", end=" ", flush=True)
+                    print(f"      Обработка GPT-5.1 ({len(pages)} стр.)...", end=" ", flush=True)
                     response_text, error_code = self.process_images_with_gpt(page_images, credit_prompt)
                     cleaned = self.clean_json_response(response_text)
                     extracted_data = json.loads(cleaned) if cleaned else {}
@@ -10457,22 +10457,55 @@ JSON (СТРОГО этот формат):
         # Переменная для хранения ФИО должника (извлекается из паспорта)
         debtor_fio = ""
 
-        for idx, pdf in enumerate(sorted_pdf_list, 1):
-            file_start_time = time_module.time()
-            print(f"[TIMING] Processing file {idx}/{len(sorted_pdf_list)}: {pdf.name}")
+        # Умная сортировка: Паспорт -> Остальное
+        files_to_process_first = []
+        files_to_process_later = []
+        
+        for check_pdf in pdf_list:
+            if "паспорт" in check_pdf.name.lower() and "супруг" not in check_pdf.name.lower(): # Исключаем паспорт супруга из ПЕРВООЧЕРЕДНОЙ обработки
+                 files_to_process_first.append(check_pdf)
+            else:
+                 files_to_process_later.append(check_pdf)
+
+        # Сначала обрабатываем паспорта, чтобы найти ФИО
+        for pdf in files_to_process_first:
             try:
+                print(f"[PROCESS] Обработка приоритетного файла: {pdf.name}")
+                result = self.process_pdf(pdf) # Тут ФИО еще не знаем
+                
+                # Если нашли паспорт - извлекаем ФИО для контекста других доков
+                if result.document_type == "паспорт" and not result.error:
+                     fio_parts = [
+                         result.data.get("Фамилия", ""),
+                         result.data.get("Имя", ""),
+                         result.data.get("Отчество", "")
+                     ]
+                     # Собираем ФИО, исключая пустые части
+                     full_name = " ".join(filter(None, fio_parts)).strip()
+                     
+                     # Фолбек на общее поле ФИО, если по частям не собралось
+                     if not full_name:
+                         full_name = result.data.get("ФИО", "")
+                         
+                     if full_name:
+                         debtor_fio = full_name
+                         print(f"[CONTEXT] Установлено ФИО должника из паспорта: {debtor_fio}")
+
+                results.append(result)
+                aggregated.setdefault(result.document_type, []).append(result.data)
+                
+            except Exception as exc:
+                print(f"[ERROR] Ошибка при обработке паспорта {pdf.name}: {exc}")
+
+        # Потом обрабатываем остальные файлы с уже известным ФИО
+        for pdf in files_to_process_later:
+            try:
+                print(f"[PROCESS] Обработка файла: {pdf.name} (Контекст ФИО: '{debtor_fio}')")
                 result = self.process_pdf(pdf, debtor_fio=debtor_fio)
-            except Exception as exc:  # noqa: BLE001
-                result = DocumentOutput(
-                    file=pdf.name,
-                    document_type="ошибка",
-                    pages=0,
-                    processing_time_seconds=0.0,
-                    data={},
-                    error=str(exc),
-                )
-            file_elapsed = time_module.time() - file_start_time
-            print(f"[TIMING] File {pdf.name} completed in {file_elapsed:.1f}s")
+                results.append(result)
+                aggregated.setdefault(result.document_type, []).append(result.data)
+            except Exception as exc:
+                print(f"[ERROR] Ошибка при обработке {pdf.name}: {exc}")
             results.append(result)
             
             # DEBUG: Проверяем почему данные не добавляются в aggregated
