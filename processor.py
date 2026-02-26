@@ -3934,8 +3934,6 @@ JSON:
             response = client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_completion_tokens=5000
             )
             
             result_text = response.choices[0].message.content.strip()
@@ -7139,41 +7137,80 @@ JSON:
             else:
                 тип_кредитора = "БАНК"
 
-            дата_договора = (справка.get("Дата_договора") or справка.get("Дата") or "").strip()
+            дата_договора = (справка.get("Дата_возникновения") or справка.get("Дата_договора") or справка.get("Дата") or "").strip()
             инн = (справка.get("ИНН") or "").strip()
             огрн = (справка.get("ОГРН") or "").strip()
             
-            # Для справок используем текущую сумму долга в ключе
-            сумма_для_ключа = int(сумма) if сумма else 0
-
-            # Ключ дедупликации: название + дата + текущая сумма
-            dedup_key = f"{кредитор_normalized}|{дата_договора}|{сумма_для_ключа}"
-
-            # Справки имеют приоритет - они содержат актуальные данные от кредитора
-            if dedup_key not in all_credits:
-                print(f"      [СПРАВКА] Добавлен {кредитор_canonical}: {сумма} руб. (дата: {дата_договора})")
-                all_credits[dedup_key] = {
-                    "Кредитор": кредитор_canonical,
-                    "ИНН_кредитора": инн or None,
-                    "ОГРН_кредитора": огрн or None,
-                    "Дата_договора": дата_договора or None,
-                    "Сумма_задолженности": сумма,
-                    "Тип_кредитора": тип_кредитора,
-                    "Текущая_задолженность": DocumentProcessor.parse_decimal(справка.get("Основной_долг")),
-                    "Текущая_просрочка": None,
-                    "Основной_долг": DocumentProcessor.parse_decimal(справка.get("Основной_долг")),
-                    "Проценты": DocumentProcessor.parse_decimal(справка.get("Проценты")),
-                    "Штрафы": DocumentProcessor.parse_decimal(справка.get("Штрафы")),
-                    "Просрочка": None,
-                    "Источник": "справка_о_задолженности",
-                }
+            # Попытка найти существующий кредит в отчетах (Fuzzy Search)
+            found_key = None
+            found_by = ""
+            
+            # Проходим по всем уже добавленным кредитам
+            for ex_key, ex_data in all_credits.items():
+                ex_name = ex_data["Кредитор"]
+                ex_date = ex_data.get("Дата_договора", "")
+                
+                # 1. Сравнение имен (нормализованных)
+                # Нормализуем имя из существующей записи для сравнения
+                ex_norm, _ = DocumentProcessor.normalize_bank_name(ex_name)
+                
+                # Пропускаем, если имена совсем разные
+                if ex_norm != кредитор_normalized:
+                    # Попробуем fuzzy match для имен
+                    name_ratio = difflib.SequenceMatcher(None, ex_norm, кредитор_normalized).ratio()
+                    if name_ratio < 0.85:
+                        continue
+                
+                # 2. Сравнение дат (если даты есть)
+                if дата_договора and ex_date:
+                    if дата_договора == ex_date:
+                        found_key = ex_key
+                        found_by = "exact_date"
+                        break
+                    
+                    # Пытаемся распарсить и сравнить с допуском
+                    try:
+                        d1 = datetime.strptime(дата_договора, "%d.%m.%Y")
+                        d2 = datetime.strptime(ex_date, "%d.%m.%Y")
+                        if abs((d1 - d2).days) <= 5: # 5 дней допуск
+                            found_key = ex_key
+                            found_by = f"fuzzy_date_{abs((d1 - d2).days)}d"
+                            break
+                    except:
+                        pass
+            
+            if found_key:
+                print(f"      [СПРАВКА] Обновление {кредитор_canonical} (найден по {found_by}): {all_credits[found_key]['Сумма_задолженности']} → {сумма} руб.")
+                # Обновляем существующую запись данными из справки
+                all_credits[found_key]["Сумма_задолженности"] = сумма
+                all_credits[found_key]["Источник"] = "справка_о_задолженности"
+                if дата_договора:
+                    all_credits[found_key]["Дата_договора"] = дата_договора
+                if инн and not all_credits[found_key].get("ИНН_кредитора"):
+                    all_credits[found_key]["ИНН_кредитора"] = инн
             else:
-                # Если уже есть в отчетах, обновляем если сумма больше (справка актуальнее)
-                existing_sum = all_credits[dedup_key].get("Сумма_задолженности", Decimal(0))
-                if сумма > existing_sum:
-                    print(f"      [СПРАВКА] Обновление {кредитор_canonical}: {existing_sum} → {сумма} руб.")
-                    all_credits[dedup_key]["Сумма_задолженности"] = сумма
-                    all_credits[dedup_key]["Источник"] = "справка_о_задолженности"
+                # Если не нашли - добавляем как новый
+                # Ключ дедупликации: название + дата + текущая сумма (так как начальной нет)
+                сумма_для_ключа = int(сумма) if сумма else 0
+                dedup_key = f"{кредитор_normalized}|{дата_договора}|{сумма_для_ключа}"
+                
+                if dedup_key not in all_credits:
+                    print(f"      [СПРАВКА] Добавлен {кредитор_canonical}: {сумма} руб. (дата: {дата_договора})")
+                    all_credits[dedup_key] = {
+                        "Кредитор": кредитор_canonical,
+                        "ИНН_кредитора": инн or None,
+                        "ОГРН_кредитора": огрн or None,
+                        "Дата_договора": дата_договора or None,
+                        "Сумма_задолженности": сумма,
+                        "Тип_кредитора": тип_кредитора,
+                        "Текущая_задолженность": DocumentProcessor.parse_decimal(справка.get("Основной_долг")),
+                        "Текущая_просрочка": None,
+                        "Основной_долг": DocumentProcessor.parse_decimal(справка.get("Основной_долг")),
+                        "Проценты": DocumentProcessor.parse_decimal(справка.get("Проценты")),
+                        "Штрафы": DocumentProcessor.parse_decimal(справка.get("Штрафы")),
+                        "Просрочка": None,
+                        "Источник": "справка_о_задолженности",
+                    }
 
         # Сортируем по убыванию суммы
         result = sorted(all_credits.values(), key=lambda x: x["Сумма_задолженности"], reverse=True)
@@ -8043,8 +8080,6 @@ JSON формат:
             response = openai_client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_completion_tokens=1500
             )
             
             result = response.choices[0].message.content.strip()
@@ -9057,7 +9092,6 @@ JSON формат:
             assistant = client.beta.assistants.create(
                 model="gpt-5.1",  # Самая мощная модель для максимального качества
                 tools=[{"type": "file_search"}],
-                temperature=0.1,  # Небольшая вариативность может помочь с форматированием
             )
             print(f"OK")
 
@@ -9233,8 +9267,6 @@ JSON формат:
                         {"role": "system", "content": full_system_prompt},
                         {"role": "user", "content": f"Вот часть кредитного отчета (страницы {i*CHUNK_SIZE+1}-{(i+1)*CHUNK_SIZE}). Извлеки данные:\n\n{chunk_text}"}
                     ],
-                    temperature=0.1,
-                    max_completion_tokens=4000,
                     response_format={"type": "json_object"}
                 )
                 

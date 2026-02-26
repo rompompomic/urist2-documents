@@ -241,8 +241,6 @@ def generate_fio_fields(fio: str, devichya_familiya: str = None) -> dict:
                 {"role": "system", "content": "Ты помощник для обработки русских ФИО и склонения по падежам. Отвечай только в формате JSON."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1,
-            max_completion_tokens=500
         )
         
         result_text = response.choices[0].message.content.strip()
