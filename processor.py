@@ -2653,13 +2653,13 @@ JSON:
 
 
     @staticmethod
-    def parse_inn_and_address_from_rusprofile(company_name: str, _depth: int = 0, _try_full_name: bool = False, _try_abbreviation: bool = False) -> tuple[Optional[str], Optional[str]]:
+    def parse_inn_and_address_from_rusprofile(company_name: str, _depth: int = 0, _try_full_name: bool = True, _try_abbreviation: bool = False) -> tuple[Optional[str], Optional[str]]:
         """Парсит ИНН и адрес организации с RusProfile.ru с валидацией названия
         
         Args:
             company_name: Название организации для поиска
             _depth: Глубина рекурсии (для retry с новыми параметрами)
-            _try_full_name: Если True, искать с полным названием (не удалять ОПФ)
+            _try_full_name: Если True, искать с полным названием (не удалять ОПФ). По умолчанию True (сначала пробуем полное).
             _try_abbreviation: Если True, пробуем искать по аббревиатуре (по последней надежде)
             
         Returns:
@@ -2696,176 +2696,9 @@ JSON:
             if _depth > 0:
                 print(f"[RUSPROFILE] 🔄 Попытка #{_depth + 1}/{MAX_RETRIES} для '{company_name}'")
             
-            # Расширенный список User-Agent'ов (50+ вариантов для ротации)
-            user_agents = [
-                # Chrome на Windows
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                # Chrome на Mac
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-                # Chrome на Linux
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-                # Firefox на Windows
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:119.0) Gecko/20100101 Firefox/119.0",
-                # Firefox на Mac
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 13.5; rv:120.0) Gecko/20100101 Firefox/120.0",
-                # Firefox на Linux
-                "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
-                "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
-                # Safari на Mac
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
-                # Safari на iPhone
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
-                # Edge на Windows
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0",
-                # Opera
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OPR/105.0.0.0",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 OPR/104.0.0.0",
-                # Yandex Browser
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 YaBrowser/24.1.0.0 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 YaBrowser/23.11.0.0 Safari/537.36",
-                # Android Chrome
-                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.144 Mobile Safari/537.36",
-                "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.6045.193 Mobile Safari/537.36",
-                # Android Firefox
-                "Mozilla/5.0 (Android 14; Mobile; rv:121.0) Gecko/121.0 Firefox/121.0",
-                "Mozilla/5.0 (Android 13; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0",
-            ]
-            
-            # Генерация реалистичного российского IP для X-Forwarded-For
-            def generate_russian_ip():
-                """Генерирует реалистичный IP российских провайдеров"""
-                provider_prefixes = [
-                    '95.',   # Ростелеком
-                    '109.',  # МТС
-                    '178.',  # Билайн
-                    '188.',  # Мегафон
-                    '31.',   # Yandex
-                    '77.',   # Mail.ru
-                    '46.',   # Другие провайдеры
-                    '5.',    # Другие провайдеры
-                ]
-                prefix = random.choice(provider_prefixes)
-                remaining = '.'.join([str(random.randint(0, 255)) for _ in range(3)])
-                fake_ip = prefix + remaining[remaining.index('.')+1:]
-                return fake_ip
-            
-            # Заголовки с подменой IP и расширенными параметрами
-            fake_ip = generate_russian_ip()
-            selected_user_agent = random.choice(user_agents)
-            
-            # Определяем тип браузера и платформу для специфичных заголовков
-            is_chrome = 'Chrome' in selected_user_agent and 'Edg' not in selected_user_agent
-            is_mobile = 'Mobile' in selected_user_agent or 'Android' in selected_user_agent or 'iPhone' in selected_user_agent
-            
-            # Определяем платформу
-            if 'Windows' in selected_user_agent:
-                platform = '"Windows"'
-            elif 'Macintosh' in selected_user_agent or 'iPhone' in selected_user_agent or 'iPad' in selected_user_agent:
-                platform = '"macOS"' if 'Macintosh' in selected_user_agent else '"iOS"'
-            elif 'Android' in selected_user_agent:
-                platform = '"Android"'
-            else:
-                platform = '"Linux"'
-            
-            # Базовые заголовки
-            headers = {
-                "User-Agent": selected_user_agent,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Accept-Language": random.choice([
-                    "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "ru,en;q=0.9",
-                    "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
-                ]),
-                "Accept-Encoding": random.choice([
-                    "gzip, deflate, br",
-                    "gzip, deflate, br, zstd",
-                ]),
-                "DNT": "1",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none" if _depth == 0 else "same-origin",
-                "Sec-Fetch-User": "?1",
-                "Cache-Control": "max-age=0",
-                # Подмена IP адреса для обхода geo-блокировок и rate limiting
-                "X-Forwarded-For": fake_ip,
-                "X-Real-IP": fake_ip,
-                "X-Client-IP": fake_ip,
-                # Российская временная зона (Москва UTC+3)
-                "X-Timezone": "Europe/Moscow",
-                "X-Timezone-Offset": "+180",
-            }
-            
-            # Browser-specific headers для Chrome
-            if is_chrome:
-                # Извлекаем версию Chrome
-                chrome_version_match = re.search(r'Chrome/(\d+)', selected_user_agent)
-                chrome_version = chrome_version_match.group(1) if chrome_version_match else "120"
-                
-                headers.update({
-                    "sec-ch-ua": f'"Not_A Brand";v="8", "Chromium";v="{chrome_version}", "Google Chrome";v="{chrome_version}"',
-                    "sec-ch-ua-mobile": "?1" if is_mobile else "?0",
-                    "sec-ch-ua-platform": platform,
-                })
-            
-            # Referer chain: первый запрос - с поисковика, повторные - с предыдущей страницы
-            if _depth == 0:
-                # Первая попытка - referer с поисковика
-                headers["Referer"] = random.choice([
-                    "https://www.google.com/search?q=" + quote_plus(company_name),
-                    "https://yandex.ru/search/?text=" + quote_plus(company_name),
-                    "https://www.bing.com/search?q=" + quote_plus(company_name),
-                ])
-            else:
-                # Повторные попытки - referer с RusProfile (навигация внутри сайта)
-                headers["Referer"] = "https://www.rusprofile.ru/"
-                headers["Sec-Fetch-Site"] = "same-origin"
-            
-            # Используем requests с поддержкой HTTP/2 (через httpx при наличии)
-            try:
-                import httpx
-                # Создаем HTTP/2 клиент для более реалистичного поведения
-                session = httpx.Client(http2=True, headers=headers, timeout=20.0, follow_redirects=True)
-                using_http2 = True
-            except ImportError:
-                # Fallback на обычный requests
-                session = requests.Session()
-                session.headers.update(headers)
-                using_http2 = False
-            
-            # Функция нормализации для сравнения названий
-            def normalize_name_for_compare(name: str) -> str:
-                if not name: return ""
-                n = name.lower()
-                # Удаляем длинные ОПФ first
-                for entity in ["общество с ограниченной ответственностью", "акционерное общество", "публичное акционерное общество", "специализированное финансовое общество", "специализированное финан. общество", "сфо"]:
-                     n = re.sub(r'\b' + re.escape(entity) + r'\b', '', n)
-                
-                # Удаляем короткие ОПФ
-                for entity in ["ооо", "пао", "ао", "зао", "мкк", "мфк", "мфо", "пко", "нко", "банк", "кб"]:
-                     n = re.sub(r'\b' + entity + r'\b', '', n)
-                     
-                # Удаляем кавычки, скобки и спецсимволы
-                n = re.sub(r'["«»\(\)]', ' ', n)
-                
-                # Удаляем "грязные" суффиксы типа ))
-                n = n.replace("))", "")
-                
-                return " ".join(n.split())
+            from random_user_agent.user_agent import UserAgent
+            import asyncio
+            from patchright_scraper import PatchrightScraper, ScraperConfig
 
             # Очищаем имя ПЕРЕД поиском
             clean_search_query = company_name
@@ -2929,9 +2762,19 @@ JSON:
             # И если это не режим аббревиатуры (где мы сами сформировали запрос)
             elif not _try_full_name:
                 # ЗАМЕНА: Разрешаем удалять несколько префиксов подряд (например "ООО МКК ...")
-                # Было: re.sub(r'^(ООО|АО|ПАО|ЗАО|МКК|МФК|МФО)\s+', '', ...)
-                # Стало: Добавлен + после группы и более широкий список
-                clean_search_query = re.sub(r'^((ООО|АО|ПАО|ЗАО|МКК|МФК|МФО|НКО|ПКО|Банк)\s+)+', '', clean_search_query, flags=re.IGNORECASE)
+                # Эвристика: если после удаления короткого имени останется слишком мало символов (менее 4), 
+                # то это может привести к нерелевантной выдаче (пример: "ПКО Цду" -> "Цду" -> "ЦДУ РАН").
+                # В таких случаях лучше оставить ПКО/МКК и т.д.
+                
+                # Сначала пробуем удалить всё
+                potential_clean = re.sub(r'^((ООО|АО|ПАО|ЗАО|МКК|МФК|МФО|НКО|ПКО|Банк)\s+)+', '', clean_search_query, flags=re.IGNORECASE)
+                
+                # Если осталось слишком мало, откатываемся и удаляем только обязательные (OOO, AO...)
+                if len(potential_clean) < 4:
+                     # Удаляем только "ООО", "АО", "ПАО", "ЗАО"
+                     clean_search_query = re.sub(r'^((ООО|АО|ПАО|ЗАО)\s+)+', '', clean_search_query, flags=re.IGNORECASE)
+                else:
+                     clean_search_query = potential_clean
             
             # Запоминаем, было ли упрощение
             was_simplified = (clean_search_query != before_simplification)
@@ -2943,6 +2786,26 @@ JSON:
             is_inn_search = bool(re.match(r'^\d{10,12}$', clean_search_query))
             if is_inn_search:
                 print(f"[RUSPROFILE] Запрос определен как поиск по ИНН: {clean_search_query}")
+            
+            # Функция нормализации для сравнения названий
+            def normalize_name_for_compare(name: str) -> str:
+                if not name: return ""
+                n = name.lower()
+                # Удаляем длинные ОПФ first
+                for entity in ["общество с ограниченной ответственностью", "акционерное общество", "публичное акционерное общество", "специализированное финансовое общество", "специализированное финан. общество", "сфо"]:
+                     n = re.sub(r'\b' + re.escape(entity) + r'\b', '', n)
+                
+                # Удаляем короткие ОПФ
+                for entity in ["ооо", "пао", "ао", "зао", "мкк", "мфк", "мфо", "пко", "нко", "банк", "кб"]:
+                     n = re.sub(r'\b' + entity + r'\b', '', n)
+                     
+                # Удаляем кавычки, скобки и спецсимволы
+                n = re.sub(r'["«»\(\)]', ' ', n)
+                
+                # Удаляем "грязные" суффиксы типа ))
+                n = n.replace("))", "")
+                
+                return " ".join(n.split())
 
             normalized_query = normalize_name_for_compare(clean_search_query)
             
@@ -2953,26 +2816,113 @@ JSON:
             print(f"[RUSPROFILE] Поиск по запросу: '{clean_search_query}' (orig: '{company_name}')")
             search_url = f"https://www.rusprofile.ru/search?query={quote_plus(clean_search_query)}"
             
-            # Выполняем запрос (работает одинаково для requests и httpx)
-            if using_http2:
-                response = session.get(search_url)
-            else:
-                response = session.get(search_url, timeout=20, allow_redirects=True)
-            
-            if response.status_code != 200:
-                print(f"[RUSPROFILE] Ошибка при поиске '{company_name}': статус {response.status_code}")
-                if using_http2:
-                    session.close()
+            # === ЗАМЕНЕНО НА PATCHRIGHT ===
+            async def fetch_with_patchright(url):
+                # Настройка скрапера с максимальной маскировкой
+                config = ScraperConfig(
+                    use_stealth=True,
+                    simulate_human=True, # Включаем симуляцию человеческого поведения
+                    headless=True,       # Скрытый режим (можно False для отладки)
+                    debug=False,
+                    use_persistent_context=True # Включаем постоянный контекст
+                )
+                async with PatchrightScraper(config) as scraper:
+                    # fetch_content теперь возвращает [(content, final_url)]
+                    results = await scraper.fetch_content(url)
+                    if results and len(results) > 0:
+                        return results[0]  # (content, final_url)
+                    return None, url
+
+            html, response_url = None, None
+            try:
+                # Попытка определить текущий loop
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+                
+                if loop and loop.is_running():
+                     # Мы уже в асинхронном контексте. Нельзя вызывать asyncio.run()
+                     # Но наша функция синхронная. 
+                     # Вариант 1: nest_asyncio (нужна установка).
+                     # Вариант 2: запуск в отдельном потоке.
+                     # Попробуем вариант с новым потоком, чтобы изолировать лупы.
+                     from concurrent.futures import ThreadPoolExecutor
+                     def run_in_new_loop(coro):
+                         new_loop = asyncio.new_event_loop()
+                         asyncio.set_event_loop(new_loop)
+                         try:
+                             return new_loop.run_until_complete(coro)
+                         finally:
+                             new_loop.close()
+
+                     with ThreadPoolExecutor() as executor:
+                         # Оборачиваем вызов корутины
+                         future = executor.submit(run_in_new_loop, fetch_with_patchright(search_url))
+                         result = future.result()
+                         if result:
+                             html, response_url = result
+                else:
+                    # Обычный синхронный контекст
+                    result = asyncio.run(fetch_with_patchright(search_url))
+                    if result:
+                        html, response_url = result
+
+            except Exception as e:
+                print(f"[RUSPROFILE] Ошибка PatchrightScraper при поиске '{company_name}': {e}")
                 if _depth == 0:
-                     print(f"[FALLBACK] RusProfile error ({response.status_code}), trying Zachestnyibiznes...")
+                     print(f"[FALLBACK] RusProfile error, trying Zachestnyibiznes...")
                      return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
                 return None, None
-                
+            
             # Определяем, произошел ли редирект (RusProfile сразу открыл страницу компании)
-            response_url = str(response.url) if using_http2 else response.url
+            # Patchright уже прошел редиректы и вернул final_url
+            response_url = response_url if response_url else search_url
             is_redirected = response_url != search_url and "/search" not in response_url
+            
+            # Функция нормализации для сравнения названий
+            def normalize_name_for_compare(name: str) -> str:
+                if not name: return ""
+                n = name.lower()
+                # Удаляем длинные ОПФ first
+                for entity in ["общество с ограниченной ответственностью", "акционерное общество", "публичное акционерное общество", "специализированное финансовое общество", "специализированное финан. общество", "сфо"]:
+                     n = re.sub(r'\b' + re.escape(entity) + r'\b', '', n)
                 
-            html = response.text
+                # Удаляем короткие ОПФ
+                for entity in ["ооо", "пао", "ао", "зао", "мкк", "мфк", "мфо", "пко", "нко", "банк", "кб"]:
+                     n = re.sub(r'\b' + entity + r'\b', '', n)
+                     
+                # Удаляем кавычки, скобки и спецсимволы
+                n = re.sub(r'["«»\(\)]', ' ', n)
+                
+                # Удаляем "грязные" суффиксы типа ))
+                n = n.replace("))", "")
+                
+                return " ".join(n.split())
+
+            normalized_query = normalize_name_for_compare(clean_search_query)
+
+            # Функция нормализации для сравнения названий
+            def normalize_name_for_compare(name: str) -> str:
+                if not name: return ""
+                n = name.lower()
+                # Удаляем длинные ОПФ first
+                for entity in ["общество с ограниченной ответственностью", "акционерное общество", "публичное акционерное общество", "специализированное финансовое общество", "специализированное финан. общество", "сфо"]:
+                     n = re.sub(r'\b' + re.escape(entity) + r'\b', '', n)
+                
+                # Удаляем короткие ОПФ
+                for entity in ["ооо", "пао", "ао", "зао", "мкк", "мфк", "мфо", "пко", "нко", "банк", "кб"]:
+                     n = re.sub(r'\b' + entity + r'\b', '', n)
+                     
+                # Удаляем кавычки, скобки и спецсимволы
+                n = re.sub(r'["«»\(\)]', ' ', n)
+                
+                # Удаляем "грязные" суффиксы типа ))
+                n = n.replace("))", "")
+                
+                return " ".join(n.split())
+
+            normalized_query = normalize_name_for_compare(clean_search_query)
             soup = BeautifulSoup(html, "lxml")
             
             # Проверка на антибот / капчу
@@ -3238,9 +3188,17 @@ JSON:
                 else:
                     print(f"[RUSPROFILE] ❌ Результат '{best['name']}' ОТКЛОНЕН - {rejection_reason}")
                 
+                # FALLBACK NEW: Если искали с полным названием (не удаляли ОПФ) и не нашли -> пробуем упростить
+                # was_simplified == False (т.к. _try_full_name=True)
+                if not was_simplified and _try_full_name and not _try_abbreviation:
+                    print(f"[RUSPROFILE] 🔄 Пробуем поиск с УПРОЩЕННЫМ названием (без ОПФ)...")
+                    time.sleep(random.uniform(0.5, 1.0))
+                    res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=False)
+                    if res and res != (None, None):
+                        return res
 
                 # FALLBACK: Если было упрощение названия (удален ОПФ) и еще не пробовали полное название
-                # ВАЖНО: Если мы уже в режиме аббревиатуры, этот fallback может быть не нужен или должен учитывать флаг
+                # (Эта ветка теперь скорее всего не сработает из-за смены дефолта, но оставим для надежности)
                 if was_simplified and not _try_full_name and not _try_abbreviation:
                     print(f"[RUSPROFILE] 🔄 Пробуем поиск с полным названием (с ОПФ)...")
                     time.sleep(random.uniform(0.5, 1.0))
@@ -3340,11 +3298,39 @@ JSON:
                 time.sleep(random.uniform(1.5, 3.0))
                 
                 try:
-                    # Обновляем referer
-                    session.headers.update({"Referer": search_url})
-                    card_resp = session.get(best["url"], timeout=20)
-                    if card_resp.status_code == 200:
-                        card_soup = BeautifulSoup(card_resp.text, "lxml")
+                    # Используем Patchright для получения карточки
+                    card_html = None
+                    try:
+                        # Логика запуска async функции (копия логики выше)
+                        try:
+                            loop = asyncio.get_running_loop()
+                        except RuntimeError:
+                            loop = None
+                        
+                        if loop and loop.is_running():
+                             from concurrent.futures import ThreadPoolExecutor
+                             def run_in_new_loop_inner(coro):
+                                 new_loop = asyncio.new_event_loop()
+                                 asyncio.set_event_loop(new_loop)
+                                 try:
+                                     return new_loop.run_until_complete(coro)
+                                 finally:
+                                     new_loop.close()
+
+                             with ThreadPoolExecutor() as executor:
+                                 future = executor.submit(run_in_new_loop_inner, fetch_with_patchright(best["url"]))
+                                 result = future.result()
+                                 if result:
+                                     card_html, _ = result
+                        else:
+                            result = asyncio.run(fetch_with_patchright(best["url"]))
+                            if result:
+                                card_html, _ = result
+                    except Exception as e_run:
+                         print(f"[RUSPROFILE] Ошибка при переходе на карточку: {e_run}")
+
+                    if card_html:
+                        card_soup = BeautifulSoup(card_html, "lxml")
                         
                         # Достаем ИНН
                         if not best["inn"]:
