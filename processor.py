@@ -3197,15 +3197,18 @@ JSON:
                     if res and res != (None, None):
                         return res
 
+
                 # FALLBACK: Если было упрощение названия (удален ОПФ) и еще не пробовали полное название
                 # (Эта ветка теперь скорее всего не сработает из-за смены дефолта, но оставим для надежности)
-                if was_simplified and not _try_full_name and not _try_abbreviation:
-                    print(f"[RUSPROFILE] 🔄 Пробуем поиск с полным названием (с ОПФ)...")
-                    time.sleep(random.uniform(0.5, 1.0))
-                    res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=True)
-                    if res and res != (None, None):
-                        return res
+                # FIX: Удалено, так как вызывает бесконечный цикл при переключении Full -> Simple -> Full
+                # if was_simplified and not _try_full_name and not _try_abbreviation:
+                #     print(f"[RUSPROFILE] 🔄 Пробуем поиск с полным названием (с ОПФ)...")
+                #     time.sleep(random.uniform(0.5, 1.0))
+                #     res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=True)
+                #     if res and res != (None, None):
+                #         return res
                     # Если поиск с полным названием не дал результата, продолжаем обычные ретраи
+
 
                 # FALLBACK 2: Если все попытки провалились - пробуем ПОСЛЕДНЮЮ надежду: поиск по аббревиатуре
                 # Пример: "МКК Универсального Финансирования" -> "МКК УФ"
