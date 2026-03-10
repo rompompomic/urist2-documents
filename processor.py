@@ -3129,115 +3129,102 @@ JSON:
                 return None, None
                 
             # Сортируем кандидатов по score (схожести названия) от большего к меньшему
-            # Это важно, так как RusProfile может выдавать популярные компании первыми,
-            # даже если название совпадает не полностью (например "Сбербанк" вместо "Сбербанк Лизинг")
             candidates.sort(key=lambda x: x["score"], reverse=True)
 
-            # Выбираем лучший результат
-            best = candidates[0]
+            # Перебираем ВСЕХ кандидатов, пока не найдем подходящего
+            # Раньше брали только первого (candidates[0]), и если он не подходил - сдавались
+            found_valid = False
+            best_candidate = None
             
-            # Минимальный порог similarity для защиты от случайных редиректов
-            # Повышен порог до 0.5 для 100% валидности результатов
-            MIN_SIMILARITY_THRESHOLD = 0.5
-            
-            # Дополнительная проверка: защита от редиректов на неправильный тип компании
-            # Если ищем финансовую организацию, а нашли полицию/аптеку/стройку - это ошибка
-            query_upper = normalized_query.upper()
-            result_upper = normalize_name_for_compare(best['name']).upper()
-            
-            # Финансовые маркеры в запросе
-            financial_markers = ['БАНК', 'МКК', 'МФК', 'МФО', 'КРЕДИТ', 'ЗАЙМ', 'ФИНАНС', 'СФО']
-            has_financial_in_query = any(marker in query_upper for marker in financial_markers)
-            
-            # Стоп-слова - если они есть в результате, это точно неправильная компания
-            stop_words = ['ОВД', 'ПОЛИЦИЯ', 'МВД', 'АПТЕК', 'СТРОЙ', 'МЕДИЦИН', 'ПОЛИКЛИНИК', 
-                         'ШКОЛА', 'БОЛЬНИЦ', 'МУП', 'ГУП', 'АДМИНИСТРАЦИЯ', 'УПРАВЛЕНИЕ']
-            has_stopword_in_result = any(word in result_upper for word in stop_words)
-            
-            # Если ищем финансовую организацию, но в результате нет финансовых маркеров - подозрительно
-            has_financial_in_result = any(marker in result_upper for marker in financial_markers)
-            
-            # Проверка валидности результата
-            is_valid_result = True
-            rejection_reason = ""
-            
-            # 1. Проверка similarity
-            if not is_inn_search and best['score'] < MIN_SIMILARITY_THRESHOLD:
-                is_valid_result = False
-                rejection_reason = f"низкое совпадение названий (score={best['score']:.2f} < {MIN_SIMILARITY_THRESHOLD})"
-            
-            # 2. Проверка similarity при поиске по ИНН
-            elif is_inn_search and best['score'] < 1.0:
-                is_valid_result = False
-                rejection_reason = f"несовпадение ИНН (ожидался {clean_search_query}, найден {best.get('inn')})"
+            for idx, candidate in enumerate(candidates):
+                best = candidate
+                print(f"[RUSPROFILE] Проверка кандидата #{idx+1}: '{best['name']}' (score={best['score']:.2f})")
 
-            # 2.1. Проверка similarity при поиске по аббревиатуре
-            elif _try_abbreviation and best['score'] < 0.6:
-                # Меньший порог для аббревиатур, так как они могут быть неточными
-                is_valid_result = False
-                rejection_reason = f"не найдено совпадений по аббревиатуре (score={best['score']:.2f})"
-
-            # 3. Проверка на стоп-слова
-            elif has_stopword_in_result:
-                is_valid_result = False
-                rejection_reason = f"найдена неправильная организация (не финансовая)"
-            
-            # 3. Проверка типа организации
-            elif not is_inn_search and has_financial_in_query and not has_financial_in_result:
-                is_valid_result = False
-                rejection_reason = f"искали финансовую организацию, нашли другой тип"
-            
-            # 4. Валидация ИНН (если он есть)
-            if is_valid_result and best['inn']:
-                if not DocumentProcessor.validate_inn(best['inn']):
-                    is_valid_result = False
-                    rejection_reason = f"ИНН {best['inn']} не прошел валидацию контрольной суммы"
-            
-            # Выводим результат проверки
-            if not is_valid_result:
-                if is_redirected:
-                    print(f"[RUSPROFILE] ❌ Редирект на страницу: '{best['name']}' ОТКЛОНЕН - {rejection_reason}")
-                else:
-                    print(f"[RUSPROFILE] ❌ Результат '{best['name']}' ОТКЛОНЕН - {rejection_reason}")
+                # Минимальный порог similarity для защиты от случайных редиректов
+                MIN_SIMILARITY_THRESHOLD = 0.5
                 
-                # FALLBACK NEW: Если искали с полным названием (не удаляли ОПФ) и не нашли -> пробуем упростить
-                # was_simplified == False (т.к. _try_full_name=True)
-                if not was_simplified and _try_full_name and not _try_abbreviation:
-                    print(f"[RUSPROFILE] 🔄 Пробуем поиск с УПРОЩЕННЫМ названием (без ОПФ)...")
-                    time.sleep(random.uniform(0.5, 1.0))
-                    res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=False)
-                    if res and res != (None, None):
-                        return res
+                # Дополнительная проверка: защита от редиректов на неправильный тип компании
+                query_upper = normalized_query.upper()
+                result_upper = normalize_name_for_compare(best['name']).upper()
+                
+                # Финансовые маркеры в запросе
+                financial_markers = ['БАНК', 'МКК', 'МФК', 'МФО', 'КРЕДИТ', 'ЗАЙМ', 'ФИНАНС', 'СФО']
+                has_financial_in_query = any(marker in query_upper for marker in financial_markers)
+                
+                # Стоп-слова
+                stop_words = ['ОВД', 'ПОЛИЦИЯ', 'МВД', 'АПТЕК', 'СТРОЙ', 'МЕДИЦИН', 'ПОЛИКЛИНИК', 
+                             'ШКОЛА', 'БОЛЬНИЦ', 'МУП', 'ГУП', 'АДМИНИСТРАЦИЯ', 'УПРАВЛЕНИЕ']
+                has_stopword_in_result = any(word in result_upper for word in stop_words)
+                
+                # Если ищем финансовую организацию, но в результате нет финансовых маркеров
+                has_financial_in_result = any(marker in result_upper for marker in financial_markers)
+                
+                # Валидация
+                is_valid_result = True
+                rejection_reason = ""
+                
+                # 1. Similarity
+                if not is_inn_search and best['score'] < MIN_SIMILARITY_THRESHOLD:
+                    is_valid_result = False
+                    rejection_reason = f"низкое совпадение (score={best['score']:.2f} < {MIN_SIMILARITY_THRESHOLD})"
+                
+                # 2. ИНН
+                elif is_inn_search and best['score'] < 1.0:
+                    is_valid_result = False
+                    rejection_reason = f"несовпадение ИНН (ожидался {clean_search_query}, найден {best.get('inn')})"
 
+                # 2.1. Аббревиатура
+                elif _try_abbreviation and best['score'] < 0.6:
+                    is_valid_result = False
+                    rejection_reason = f"не найдено совпадений по аббревиатуре (score={best['score']:.2f})"
 
-                # FALLBACK: Если было упрощение названия (удален ОПФ) и еще не пробовали полное название
-                # (Эта ветка теперь скорее всего не сработает из-за смены дефолта, но оставим для надежности)
-                # FIX: Удалено, так как вызывает бесконечный цикл при переключении Full -> Simple -> Full
-                # if was_simplified and not _try_full_name and not _try_abbreviation:
-                #     print(f"[RUSPROFILE] 🔄 Пробуем поиск с полным названием (с ОПФ)...")
-                #     time.sleep(random.uniform(0.5, 1.0))
-                #     res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=True)
-                #     if res and res != (None, None):
-                #         return res
-                    # Если поиск с полным названием не дал результата, продолжаем обычные ретраи
+                # 3. Стоп-слова
+                elif has_stopword_in_result:
+                    is_valid_result = False
+                    rejection_reason = f"найдена неправильная организация (не финансовая)"
+                
+                # 3. Тип организации
+                elif not is_inn_search and has_financial_in_query and not has_financial_in_result and best['score'] < 0.95:
+                    # Если совпадение ОЧЕНЬ высокое (0.95+), прощаем отсутствие маркера (вдруг название странное)
+                    # Но если ниже 0.95 и нет "МКК/Банк" - бракуем
+                    is_valid_result = False
+                    rejection_reason = f"искали финансовую организацию, нашли другой тип"
+                
+                # 4. Валидация ИНН
+                if is_valid_result and best['inn']:
+                    if not DocumentProcessor.validate_inn(best['inn']):
+                        is_valid_result = False
+                        rejection_reason = f"ИНН {best['inn']} не прошел валидацию контрольной суммы"
+                
+                if is_valid_result:
+                    print(f"[RUSPROFILE] ✅ Найдена подходящая компания: '{best['name']}' (ИНН: {best.get('inn')})")
+                    found_valid = True
+                    best_candidate = best
+                    break
+                else:
+                    print(f"[RUSPROFILE] ❌ Кандидат '{best['name']}' ОТКЛОНЕН - {rejection_reason}")
 
+            # Если нашли валидного кандидата - возвращаем его результат
+            if found_valid and best_candidate:
+                # Кешируем результат
+                DocumentProcessor._bank_data_cache[company_name] = (best_candidate.get('inn'), best_candidate.get('address'))
+                return best_candidate.get('inn'), best_candidate.get('address')
+            
+            # Если НИ ОДИН кандидат не подошел -> запускаем Fallback логику
+            print(f"[RUSPROFILE] ⚠️ Все {len(candidates)} кандидатов были отклонены.")
 
-                # FALLBACK 2: Если все попытки провалились - пробуем ПОСЛЕДНЮЮ надежду: поиск по аббревиатуре
-                # Пример: "МКК Универсального Финансирования" -> "МКК УФ"
-                # ВАЖНО: Делаем это ТОЛЬКО на последнем уровне глубины, перед тем как сдаться
-                if not _try_abbreviation and _depth == MAX_RETRIES - 1:
-                     print(f"[RUSPROFILE] 🔄 Последняя попытка: пробуем поиск по АББРЕВИАТУРЕ...")
-                     # Сбрасываем depth в 0, но ставим флаг abbreviation, чтобы пройти как новая попытка
-                     # Используем self.parse_... если мы внутри класса, или DocumentProcessor.parse_...
-                     # Проблема в том, что рекурсия возвращает результат, но если он None, мы идем дальше к "Все попытки исчерпаны"
-                     # И главное - мы передаем company_name как есть, а логика превращения в аббревиатуру должна быть ВНУТРИ вызова с флагом
-                     
-                     # ВАЖНО: Используем класс из текущего модуля через __class__ если бы это был метод экземпляра
-                     # Но тут статический метод. Используем явно имя класса DocumentProcessor.
-                     # Если проблема с reload, то DocumentProcessor может указывать на старую версию класса.
-                     # Попробуем получить ссылку на функцию через globals() если возможно, или просто рекурсию через имя класса.
-                     
-                     print(f"[DEBUG_RECURSION] Calling recursive parse with _depth=0 for '{company_name}'")
+            # FALLBACK NEW: Если искали с полным названием (не удаляли ОПФ) и не нашли -> пробуем упростить
+            if not was_simplified and _try_full_name and not _try_abbreviation:
+                print(f"[RUSPROFILE] 🔄 Пробуем поиск с УПРОЩЕННЫМ названием (без ОПФ)...")
+                time.sleep(random.uniform(0.5, 1.0))
+                res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=False)
+                if res and res != (None, None):
+                    return res
+
+            # FALLBACK 2: Если все попытки провалились - пробуем ПОСЛЕДНЮЮ надежду: поиск по аббревиатуре
+            if not _try_abbreviation and _depth == MAX_RETRIES - 1:
+                 print(f"[RUSPROFILE] 🔄 Последняя попытка: пробуем поиск по АББРЕВИАТУРЕ...")
+                 print(f"[DEBUG_RECURSION] Calling recursive parse with _depth=0 for '{company_name}'")
                      try:
                          # Прямой вызов через класс
                          res = DocumentProcessor.parse_inn_and_address_from_rusprofile(
@@ -3701,10 +3688,11 @@ JSON:
             "ТУРБО ЗАЙМ": "ООО МКК «ТурбоЗайм»",
             "ТУРБО": "ООО МКК «ТурбоЗайм»",
             "TURBOZAIM": "ООО МКК «ТурбоЗайм»",
-            "МОНЕЙМЕН": "ООО МФК «МаниМен»",
-            "МАНИ МЕН": "ООО МФК «МаниМен»",
-            "MONEYMAN": "ООО МФК «МаниМен»",
-            "MONEY MAN": "ООО МФК «МаниМен»",
+            "МАНИМЕН": "ООО МФК «Мани Мен»",
+            "МАНИ МЕН": "ООО МФК «Мани Мен»",
+            "МОНЕЙМЕН": "ООО МФК «Мани Мен»",
+            "MONEYMAN": "ООО МФК «Мани Мен»",
+            "MONEY MAN": "ООО МФК «Мани Мен»",
             "МИГКРЕДИТ": "ООО МФК «МигКредит»",
             "МИГ КРЕДИТ": "ООО МФК «МигКредит»",
             "МИГ": "ООО МФК «МигКредит»",
