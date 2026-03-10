@@ -3122,11 +3122,8 @@ JSON:
                 })
 
             if not candidates:
-                print(f"[RUSPROFILE] Ничего не найдено для '{company_name}'")
-                if _depth == 0:
-                     print(f"[FALLBACK] RusProfile не нашел, пробую Zachestnyibiznes...")
-                     return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
-                return None, None
+                print(f"[RUSPROFILE] Ничего не найдено для '{company_name}' (depth={_depth})")
+                # Не возвращаем сразу, даем шанс рекурсивному поиску по упрощенному названию/аббревиатуре ниже
                 
             # Сортируем кандидатов по score (схожести названия) от большего к меньшему
             candidates.sort(key=lambda x: x["score"], reverse=True)
@@ -3206,186 +3203,115 @@ JSON:
 
             # Если нашли валидного кандидата - возвращаем его результат
             if found_valid and best_candidate:
+                final_address = best_candidate.get("address")
+                
+                # Если данных не хватает ИЛИ адрес слишком короткий (вероятно просто город), идем на страницу карточки
+                # Также проверяем, что в адресе есть индекс (6 цифр)
+                import re
+                is_bad_address = (
+                    not final_address or 
+                    len(final_address) < 20 or 
+                    "г. Москва" == final_address.strip() or
+                    not re.search(r'\d{6}', final_address)
+                )
+                
+                # Если найден URL и (нет ИНН или плохой адрес) и это не главная страница
+                if best_candidate.get("url") and (not best_candidate.get("inn") or is_bad_address) and not best_candidate.get("is_main_page"):
+                    print(f"[RUSPROFILE] ℹ️ Переходим на карточку для уточнения данных (bad_address={is_bad_address})...")
+                    time.sleep(random.uniform(1.5, 3.0))
+                    
+                    try:
+                        card_html = None
+                        try:
+                            # Логика запуска async функции
+                            try:
+                                loop = asyncio.get_running_loop()
+                            except RuntimeError:
+                                loop = None
+                            
+                            if loop and loop.is_running():
+                                 from concurrent.futures import ThreadPoolExecutor
+                                 def run_in_new_loop_inner(coro):
+                                     new_loop = asyncio.new_event_loop()
+                                     asyncio.set_event_loop(new_loop)
+                                     try:
+                                         return new_loop.run_until_complete(coro)
+                                     finally:
+                                         new_loop.close()
+
+                                 with ThreadPoolExecutor() as executor:
+                                     future = executor.submit(run_in_new_loop_inner, fetch_with_patchright(best_candidate["url"]))
+                                     result = future.result()
+                                     if result:
+                                         card_html, _ = result
+                            else:
+                                result = asyncio.run(fetch_with_patchright(best_candidate["url"]))
+                                if result:
+                                    card_html, _ = result
+                        except Exception as e_run:
+                             print(f"[RUSPROFILE] Ошибка при переходе на карточку: {e_run}")
+
+                        if card_html:
+                            card_soup = BeautifulSoup(card_html, "lxml")
+                            
+                            # Достаем ИНН
+                            if not best_candidate.get("inn"):
+                                inn_tag = card_soup.select_one('[id^="clip_inn"]')
+                                if inn_tag:
+                                    extracted_inn = inn_tag.get_text(strip=True)
+                                    if DocumentProcessor.validate_inn(extracted_inn):
+                                        best_candidate["inn"] = extracted_inn
+                                    else:
+                                        print(f"[RUSPROFILE] ⚠️ ИНН со страницы карточки не прошел валидацию: {extracted_inn}")
+                                
+                            # Достаем Адрес
+                            addr_tag = card_soup.select_one("#clip_address")
+                            if addr_tag:
+                                for dead in addr_tag.select(".copy_button, script, style, meta, .company-info__hidden"):
+                                    dead.decompose()
+                                for span in addr_tag.find_all("span", class_="long_copy"):
+                                     span.unwrap()
+                                
+                                new_address = addr_tag.get_text(separator=" ", strip=True)
+                                new_address = re.sub(r'\s+', ' ', new_address)
+                                new_address = re.sub(r'\s*,\s*', ', ', new_address)
+                                
+                                if new_address and len(new_address) > len(final_address or ""):
+                                    final_address = new_address
+                                    best_candidate["address"] = final_address
+                                    print(f"[RUSPROFILE] ✅ Адрес уточнен на карточке: {final_address}")
+                                    
+                    except Exception as e:
+                        print(f"[RUSPROFILE] Не удалось открыть карточку: {e}")
+
                 # Кешируем результат
                 DocumentProcessor._bank_data_cache[company_name] = (best_candidate.get('inn'), best_candidate.get('address'))
                 return best_candidate.get('inn'), best_candidate.get('address')
             
-            # Если НИ ОДИН кандидат не подошел -> запускаем Fallback логику
-            print(f"[RUSPROFILE] ⚠️ Все {len(candidates)} кандидатов были отклонены.")
+            # === РЕКУРСИВНЫЙ ПОИСК (ЕСЛИ НИЧЕГО НЕ НАШЛИ) ===
+            
+            # 1. Если искали по полному названию (по умолчанию) и не нашли -> пробуем без ОПФ
+            if _try_full_name:
+                print(f"[RUSPROFILE] ⚠️ Полное название не сработало, пробуем упрощенное (без ОПФ)...")
+                # Рекурсивный вызов с _try_full_name=False
+                inn, addr = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth=_depth + 1, _try_full_name=False, _try_abbreviation=False)
+                if inn: return inn, addr
 
-            # FALLBACK NEW: Если искали с полным названием (не удаляли ОПФ) и не нашли -> пробуем упростить
-            if not was_simplified and _try_full_name and not _try_abbreviation:
-                print(f"[RUSPROFILE] 🔄 Пробуем поиск с УПРОЩЕННЫМ названием (без ОПФ)...")
-                time.sleep(random.uniform(0.5, 1.0))
-                res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth, _try_full_name=False)
-                if res and res != (None, None):
-                    return res
-
-            # FALLBACK 2: Если все попытки провалились - пробуем ПОСЛЕДНЮЮ надежду: поиск по аббревиатуре
-            if not _try_abbreviation and _depth == MAX_RETRIES - 1:
-                 print(f"[RUSPROFILE] 🔄 Последняя попытка: пробуем поиск по АББРЕВИАТУРЕ...")
-                 print(f"[DEBUG_RECURSION] Calling recursive parse with _depth=0 for '{company_name}'")
-                     try:
-                         # Прямой вызов через класс
-                         res = DocumentProcessor.parse_inn_and_address_from_rusprofile(
-                             company_name, 
-                             0,     # _depth 
-                             False, # _try_full_name 
-                             True   # _try_abbreviation
-                         )
-                     except Exception as e:
-                         print(f"[DEBUG_ERROR] Recursive call failed: {e}")
-                         res = None
-                     
-                     # Если поиск по аббревиатуре что-то нашел - возвращаем
-                     if res and res != (None, None):
-                        return res
-                     
-                     # Если не нашел - не нужно печатать "Все попытки исчерпаны" еще раз, 
-                     # это сделает блок else ниже, но мы хотим избежать дублирования
-                
-                # RETRY: Пробуем еще раз с новыми параметрами (User-Agent, IP, задержка)
-                if not _try_abbreviation and _depth < MAX_RETRIES - 1:
-                    retry_delay = random.uniform(1.5, 3.0)
-                    print(f"[RUSPROFILE] 🔄 Повтор попытки #{_depth + 2} через {retry_delay:.1f} сек с новыми параметрами...")
-                    time.sleep(retry_delay)
-                    res = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth + 1, _try_full_name=False)
-                    if res and res != (None, None):
-                        return res
-                elif _try_abbreviation and _depth < MAX_RETRIES - 1:
-                     # Если мы В РЕЖИМЕ АББРЕВИАТУРЫ, тоже даем пару попыток (например, капча или сбой сети)
-                     # Но только если это не последняя попытка
-                     retry_delay = random.uniform(1.5, 3.0)
-                     print(f"[RUSPROFILE] 🔄 АББРЕВИАТУРА: Повтор попытки #{_depth + 2} через {retry_delay:.1f} сек...")
-                     time.sleep(retry_delay)
-                     res = DocumentProcessor.parse_inn_and_address_from_rusprofile(
-                         company_name, 
-                         _depth + 1, 
-                         _try_full_name=False, 
-                         _try_abbreviation=True
-                     )
-                     if res and res != (None, None):
-                        return res
-                elif not _try_abbreviation:
-                    print(f"[RUSPROFILE] ❌ Все попытки исчерпаны для '{company_name}'")
-
-                # Если мы здесь, значит ретраи не помогли или исчерпаны
-                if _depth == 0:
-                     print(f"[FALLBACK] RusProfile exhausted, trying Zachestnyibiznes...")
-                     return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
-                    
-                return None, None
+            # 2. Если уже искали без ОПФ и не нашли -> пробуем аббревиатуру
+            #    (Но только если мы еще не в режиме аббревиатуры)
+            if not _try_full_name and not _try_abbreviation:
+                 # Эвристика: имеет смысл пробовать аббревиатуру, если название состоит из >1 слова
+                 if len(company_name.split()) > 1 or len(company_name) > 10:
+                     print(f"[RUSPROFILE] ⚠️ Упрощенное название не сработало, пробуем поиск по аббревиатуре...")
+                     inn, addr = DocumentProcessor.parse_inn_and_address_from_rusprofile(company_name, _depth=_depth + 1, _try_full_name=False, _try_abbreviation=True)
+                     if inn: return inn, addr
             
-            # Результат прошел все проверки
-            if is_redirected:
-                print(f"[RUSPROFILE] ✅ Редирект на страницу: '{best['name']}' (score={best['score']:.2f}, ИНН валиден)")
-            else:
-                print(f"[RUSPROFILE] ✅ Первый результат: '{best['name']}' (score={best['score']:.2f}, ИНН валиден)")
-            
-            final_address = best["address"]
-            
-            # Если данных не хватает ИЛИ адрес слишком короткий (вероятно просто город), идем на страницу карточки
-            # Также проверяем, что в адресе есть индекс (6 цифр)
-            import re
-            is_bad_address = (
-                not final_address or 
-                len(final_address) < 20 or 
-                "г. Москва" == final_address.strip() or
-                not re.search(r'\d{6}', final_address)
-            )
-            
-            if best["url"] and (not best["inn"] or is_bad_address) and not best["is_main_page"]:
-                print(f"[RUSPROFILE] ℹ️ Переходим на карточку для уточнения данных (bad_address={is_bad_address})...")
-                # Дополнительная задержка перед переходом
-                time.sleep(random.uniform(1.5, 3.0))
-                
-                try:
-                    # Используем Patchright для получения карточки
-                    card_html = None
-                    try:
-                        # Логика запуска async функции (копия логики выше)
-                        try:
-                            loop = asyncio.get_running_loop()
-                        except RuntimeError:
-                            loop = None
+            # Если мы дошли сюда (цикл завершился неудачно и исключений не было, либо исключение было последней попыткой)
+            # И это была корневая попытка (_depth=0) -> пробуем альтернативный сервис
+            if _depth == 0 and not _try_abbreviation:
+                 print(f"[RUSPROFILE] ❌ Все попытки исчерпаны. Пробуем Zachestnyibiznes...")
+                 return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
                         
-                        if loop and loop.is_running():
-                             from concurrent.futures import ThreadPoolExecutor
-                             def run_in_new_loop_inner(coro):
-                                 new_loop = asyncio.new_event_loop()
-                                 asyncio.set_event_loop(new_loop)
-                                 try:
-                                     return new_loop.run_until_complete(coro)
-                                 finally:
-                                     new_loop.close()
-
-                             with ThreadPoolExecutor() as executor:
-                                 future = executor.submit(run_in_new_loop_inner, fetch_with_patchright(best["url"]))
-                                 result = future.result()
-                                 if result:
-                                     card_html, _ = result
-                        else:
-                            result = asyncio.run(fetch_with_patchright(best["url"]))
-                            if result:
-                                card_html, _ = result
-                    except Exception as e_run:
-                         print(f"[RUSPROFILE] Ошибка при переходе на карточку: {e_run}")
-
-                    if card_html:
-                        card_soup = BeautifulSoup(card_html, "lxml")
-                        
-                        # Достаем ИНН
-                        if not best["inn"]:
-                            inn_tag = card_soup.select_one('[id^="clip_inn"]')
-                            if inn_tag:
-                                extracted_inn = inn_tag.get_text(strip=True)
-                                # Валидация извлеченного ИНН
-                                if DocumentProcessor.validate_inn(extracted_inn):
-                                    best["inn"] = extracted_inn
-                                else:
-                                    print(f"[RUSPROFILE] ⚠️ ИНН со страницы карточки не прошел валидацию: {extracted_inn}")
-                                
-                        # Достаем Адрес (даже если он уже был, но плохой - обновляем)
-                        # Используем ту же логику очистки, что и для главной страницы
-                        addr_tag = card_soup.select_one("#clip_address")
-                        if addr_tag:
-                            # Чистим мусор (кнопки копирования и скрытые элементы)
-                            for dead in addr_tag.select(".copy_button, script, style, meta, .company-info__hidden"):
-                                dead.decompose()
-
-                            # Обрабатываем "разорванные" номера домов/помещений
-                            for span in addr_tag.find_all("span", class_="long_copy"):
-                                 span.unwrap()
-                            
-                            new_address = addr_tag.get_text(separator=" ", strip=True)
-                            
-                            # Чистим множественные пробелы и восстанавливаем запятые
-                            new_address = re.sub(r'\s+', ' ', new_address)
-                            new_address = re.sub(r'\s*,\s*', ', ', new_address)
-                            
-                            if new_address and len(new_address) > len(final_address or ""):
-                                final_address = new_address
-                                print(f"[RUSPROFILE] ✅ Адрес уточнен на карточке: {final_address}")
-                                
-                except Exception as e:
-                    print(f"[RUSPROFILE] Не удалось открыть карточку {best['url']}: {e}")
-
-            # Финальная проверка целостности: должен быть валидный ИНН
-            if best["inn"]:
-                # Еще раз проверяем валидность ИНН перед возвратом
-                if DocumentProcessor.validate_inn(best["inn"]):
-                    return best["inn"], final_address
-                else:
-                    print(f"[RUSPROFILE] ❌ Финальная проверка: ИНН {best['inn']} не прошел валидацию, отклоняю результат")
-                    return None, None
-            
-            print(f"[RUSPROFILE] ⚠️ ИНН не найден для '{company_name}'")
-            
-            # FALLBACK: Если RusProfile не нашел даже после ретраев (depth=0)
-            if _depth == 0:
-                print(f"[FALLBACK] RusProfile не нашел/заблокировал, пробую Zachestnyibiznes...")
-                return DocumentProcessor.parse_inn_and_address_from_zachestnyibiznes(company_name)
-                
             return None, None
             
         except Exception as e:
