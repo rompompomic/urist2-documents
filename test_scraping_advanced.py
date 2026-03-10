@@ -9,7 +9,7 @@ from processor import DocumentProcessor
 
 def test_rusprofile_scraping_advanced():
     test_companies = [
-        "русинтерфинанс",
+        "ООО МКК «Стратосфера»",
     ]
 
     print("=== ЗАПУСК РАСШИРЕННОГО ТЕСТА СКРАПИНГА RUSPROFILE ===")
