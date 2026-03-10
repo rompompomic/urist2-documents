@@ -28,6 +28,15 @@ else:
     # В production ограничиваем CORS (укажите свой домен)
     CORS(app, origins=[os.getenv('ALLOWED_ORIGIN', 'http://localhost:3000')])
 
+@app.route('/api/cache/clear', methods=['POST'])
+def clear_cache():
+    """Очистка кэша банковских данных"""
+    try:
+        DocumentProcessor.clear_bank_data_cache()
+        return jsonify({'status': 'success', 'message': 'Кэш банковских данных успешно очищен'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # Настройки приложения
 app.config['UPLOAD_FOLDER'] = Path('uploads')
 app.config['OUTPUT_FOLDER'] = Path('outputs')

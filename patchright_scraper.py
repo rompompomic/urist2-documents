@@ -515,7 +515,7 @@ class PatchrightScraper:
         proxy: str | None = None
     ) -> list[tuple[str, str]]:
         """Scrape content from single or multiple pages with concurrent execution."""
-        if not url_pattern:
+        if not url_pattern and pages:
             url_pattern = self.detect_url_pattern(base_url)
 
         # Use persistent context if available, otherwise create new contexts

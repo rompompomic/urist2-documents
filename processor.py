@@ -61,6 +61,12 @@ class DocumentProcessor:
     # Кэш для банковских данных (ИНН, адрес)
     _bank_data_cache: Dict[str, tuple[Optional[str], Optional[str]]] = {}
 
+    @staticmethod
+    def clear_bank_data_cache() -> None:
+        """Очищает кэш банковских данных (ИНН, адреса)"""
+        DocumentProcessor._bank_data_cache.clear()
+        print("[CACHE] Кэш банковских данных очищен.")
+
     def __init__(self) -> None:
         pass
 
@@ -2690,6 +2696,9 @@ JSON:
             # Сохраняем оригинальное название до упрощения
             before_simplification = clean_search_query
             
+            # Инициализация переменных для предотвращения UnboundLocalError
+            inn = None
+            
             # === ФОРМИРОВАНИЕ ЗАПРОСА ===
             
             if _try_abbreviation:
@@ -2933,6 +2942,14 @@ JSON:
                     raw_name = name_tag.get_text(separator=" ", strip=True)
                     # Чистим лишние пробелы и кавычки для сравнения
                     normalized_name = normalize_name_for_compare(raw_name)
+
+                    # Извлекаем ИНН
+                    inn = None
+                    for info_block in item.select("div.list-element__row-info span"):
+                        text = info_block.get_text()
+                        if "ИНН" in text:
+                            m = re.search(r"(\d{10}|\d{12})", text)
+                            if m: inn = m.group(1)
                     
                     # Считаем схожесть
                     if is_inn_search:
@@ -3257,8 +3274,9 @@ JSON:
                         print(f"[RUSPROFILE] Не удалось открыть карточку: {e}")
 
                 # Кешируем результат
-                DocumentProcessor._bank_data_cache[company_name] = (best_candidate.get('inn'), best_candidate.get('address'))
-                return best_candidate.get('inn'), best_candidate.get('address')
+                if best_candidate:
+                    DocumentProcessor._bank_data_cache[company_name] = (best_candidate.get('inn'), best_candidate.get('address'))
+                    return best_candidate.get('inn'), best_candidate.get('address')
             
             # === РЕКУРСИВНЫЙ ПОИСК (ЕСЛИ НИЧЕГО НЕ НАШЛИ) ===
             
@@ -3586,11 +3604,11 @@ JSON:
             "ТУРБО ЗАЙМ": "ООО МКК «ТурбоЗайм»",
             "ТУРБО": "ООО МКК «ТурбоЗайм»",
             "TURBOZAIM": "ООО МКК «ТурбоЗайм»",
-            "МАНИМЕН": "ООО МФК «Мани Мен»",
-            "МАНИ МЕН": "ООО МФК «Мани Мен»",
-            "МОНЕЙМЕН": "ООО МФК «Мани Мен»",
-            "MONEYMAN": "ООО МФК «Мани Мен»",
-            "MONEY MAN": "ООО МФК «Мани Мен»",
+            "МАНИМЕН": "ООО МКК «Мани Мен»",
+            "МАНИ МЕН": "ООО МКК «Мани Мен»",
+            "МОНЕЙМЕН": "ООО МКК «Мани Мен»",
+            "MONEYMAN": "ООО МКК «Мани Мен»",
+            "MONEY MAN": "ООО МКК «Мани Мен»",
             "МИГКРЕДИТ": "ООО МФК «МигКредит»",
             "МИГ КРЕДИТ": "ООО МФК «МигКредит»",
             "МИГ": "ООО МФК «МигКредит»",
