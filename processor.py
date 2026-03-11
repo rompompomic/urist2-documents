@@ -991,8 +991,7 @@ JSON:
 - Адрес регистрации (прописка).
 - Извлекай адрес 1:1 как написано в отчете, ничего не меняя (Убери только почтовый индекс и убери капс, заглавные буквы только пусть будут, там где они уместны - если нет, добавь сам заглавные буквы там где надо)! Это очень важно!
 
-ИЗВЛЕКАЙ ДАННЫЕ ПО КРЕДИТАМ ТОЛЬКО ИЗ ДЕТАЛЬНЫХ БЛОКОВ! Краткую таблицу используй только для навигации.
-ВНИМАНИЕ: Извлекай АБСОЛЮТНО ВСЕ текущие кредиты, не пропускай ни одного блока! Если блок видишь - извлекай.
+ИЗВЛЕКАЙ ДАННЫЕ ПО КРЕДИТАМ ТОЛЬКО ИЗ ДЕТАЛЬНЫХ БЛОКОВ! Краткую таблицу используй только для того чтобы узнать какие кредиты актуальные(открытые), отсюда можешь взять основную информацию для дальнейшего анализа.
 
 АЛГОРИТМ ДЛЯ КАЖДОГО КРЕДИТА (БЛОКА):
 
@@ -1020,7 +1019,7 @@ JSON:
   (Не бери строку "Срочная" для суммы, бери "Общая"!)
 
 ВАЖНО:
-- Если кредит закрыт (статус "Закрыт", "Счет закрыт") — ИГНОРИРУЙ его.
+- Если кредит закрыт (статус "Закрыт", "Счет закрыт") — ИГНОРИРУЙ его. Статус пишется справа от названия кредитора
 - Ищи 10-значный ИНН кредитора в блоке "Сведения об источнике" (ИНН или ИНН/ОГРН).
 
 JSON:
@@ -4050,79 +4049,83 @@ JSON:
 
     @staticmethod
     def determine_children_status(children: Optional[List[Dict[str, Any]]], data_map: Dict[str, List[Dict[str, Any]]] = None) -> str:
-        """Определяет наличие несовершеннолетних детей.
+        """Определяет наличие несовершеннолетних детей с Fuzzy-дедупликацией."""
+        import difflib
         
-        Args:
-            children: список детей из паспорта
-            data_map: словарь всех документов (для проверки свидетельств о рождении)
-        """
         today = date.today()
-        minors: List[str] = []
+        # Храним кортежи: (нормализованное_имя, исходная_строка, дата_рождения_obj)
+        collected_minors: List[tuple[str, str, date]] = []
         
-        # Собираем детей из паспорта
-        if children:
-            for child in children:
-                if not isinstance(child, dict):
-                    continue
-                name = child.get("ФИО") or ""
-                dob_str = child.get("Дата_рождения")
-                if not dob_str:
-                    continue
-                try:
-                    dob = datetime.strptime(dob_str, "%d.%m.%Y").date()
-                    age_years = (today - dob).days / 365.25
-                    if age_years < 18:
-                        entry = f"{name} {dob_str} г.р." if name else f"{dob_str} г.р."
-                        minors.append(entry.strip())
-                except ValueError:
-                    continue
-        
-        # Дополнительно проверяем свидетельства о рождении
+        def add_minor(name_raw: str, dob_str: str):
+            if not dob_str:
+                return
+            try:
+                dob_obj = datetime.strptime(dob_str, "%d.%m.%Y").date()
+                if (today - dob_obj).days / 365.25 >= 18:
+                    return # Уже совершеннолетний
+                
+                name_clean = name_raw.strip()
+                # Нормализация имени для сравнения: нижний регистр, только буквы
+                name_norm = "".join(c for c in name_clean.lower() if c.isalnum())
+                
+                entry_str = f"{name_clean} {dob_str} г.р."
+                
+                # Проверка на дубликат
+                is_duplicate = False
+                for existing_norm, existing_entry, existing_dob in collected_minors:
+                    # 1. Если даты рождения совпадают
+                    if existing_dob == dob_obj:
+                        # 1.1 Точное совпадение нормализованных имен
+                        if existing_norm == name_norm:
+                            is_duplicate = True
+                            break
+                        
+                        # 1.2 Fuzzy-сравнение имен (если даты совпадают)
+                        # "Пястолова Елизавета" vs "Пастолова Елизавета"
+                        if name_norm and existing_norm:
+                            ratio = difflib.SequenceMatcher(None, existing_norm, name_norm).ratio()
+                            if ratio > 0.85: # Высокая схожесть (опечатка в фамилии)
+                                is_duplicate = True
+                                break
+                
+                if not is_duplicate:
+                    collected_minors.append((name_norm, entry_str, dob_obj))
+                    
+            except ValueError:
+                pass
+
+        # 1. Собираем из свидетельств о рождении (Приоритетнее паспорта)
         if data_map:
             birth_certificates = data_map.get("свидетельство_о_рождении", [])
             for cert in birth_certificates:
                 if not isinstance(cert, dict):
                     continue
                 
-                # НОВЫЙ ФОРМАТ: массив "Дети" (несколько свидетельств в одном PDF)
+                # Новый формат (массив "Дети")
                 children_array = cert.get("Дети")
                 if children_array and isinstance(children_array, list):
                     for child_data in children_array:
-                        if not isinstance(child_data, dict):
-                            continue
-                        name = child_data.get("Ребенок_ФИО") or ""
-                        dob_str = child_data.get("Дата_рождения")
-                        if not dob_str:
-                            continue
-                        try:
-                            dob = datetime.strptime(dob_str, "%d.%m.%Y").date()
-                            age_years = (today - dob).days / 365.25
-                            if age_years < 18:
-                                entry = f"{name} {dob_str} г.р." if name else f"{dob_str} г.р."
-                                if entry.strip() not in minors:
-                                    minors.append(entry.strip())
-                        except ValueError:
-                            continue
+                        if isinstance(child_data, dict):
+                            add_minor(child_data.get("Ребенок_ФИО", ""), child_data.get("Дата_рождения", ""))
+                
+                # Старый формат (корневые поля)
                 else:
-                    # СТАРЫЙ ФОРМАТ: одно свидетельство = один ребенок (обратная совместимость)
-                    name = cert.get("Ребенок_ФИО") or ""
-                    dob_str = cert.get("Дата_рождения")
-                    if not dob_str:
-                        continue
-                    try:
-                        dob = datetime.strptime(dob_str, "%d.%m.%Y").date()
-                        age_years = (today - dob).days / 365.25
-                        if age_years < 18:
-                            entry = f"{name} {dob_str} г.р." if name else f"{dob_str} г.р."
-                            # Проверяем, что такого ребенка еще нет в списке
-                            if entry.strip() not in minors:
-                                minors.append(entry.strip())
-                    except ValueError:
-                        continue
+                    add_minor(cert.get("Ребенок_ФИО", ""), cert.get("Дата_рождения", ""))
+
+        # 2. Собираем из паспорта (если не нашли в свидетельствах)
+        if children:
+            for child in children:
+                if isinstance(child, dict):
+                    add_minor(child.get("ФИО", ""), child.get("Дата_рождения", ""))
         
-        if minors:
-            return "; ".join(minors)
-        return "нет"
+        # Формируем итоговый список строк
+        final_list = [item[1] for item in collected_minors]
+        
+        if not final_list:
+            return "Нет"
+            
+        return "; ".join(final_list)
+
 
     @staticmethod
     def get_marital_status_key(passport: Dict[str, Any], data_map: Dict[str, List[Dict[str, Any]]] = None) -> str:
@@ -4956,8 +4959,13 @@ JSON:
                 
                 if payment_name:
                     payment_lower = payment_name.lower()
+                    
+                    # Пропускаем технические части пенсии (фиксированные выплаты, повышения, доплаты и т.д.)
+                    # Это должно работать для ВСЕХ выплат, не только со словом "пенсия"
+                    if any(x in payment_lower for x in ["фиксированная выплата", "повышение", "суммарный размер", "доплата", "корректировка", "индексация", "к выплате"]):
+                        continue
 
-                    # Пенсии тоже включаем, так как не всегда есть отдельное поле
+                    # Пенсии тоже включаем, так как не всегда есть отдельное поле, но фильтруем технические составляющие
                     if "пенси" in payment_lower:
                         desc = f"Должник получает пенсию ({payment_name})"
                     elif "едв" in payment_lower or "ежемесячная денежная выплата" in payment_lower:
@@ -4968,8 +4976,43 @@ JSON:
                         desc = f"Должник получает выплату: {payment_name}"
 
                     desc += "."
+                    
+                    # Дедупликация похожих пенсий (например "Страховая пенсия" и "Страховая пенсия по старости")
+                    # Если уже есть более точное описание пенсии, не добавляем короткое
+                    if "пенсию" in desc:
+                         is_redundant = False
+                         for existing in descriptions:
+                             if "пенси" in existing and len(existing) > len(desc) and payment_name in existing:
+                                 is_redundant = True
+                                 break
+                         if is_redundant:
+                             continue
+
                     if desc not in descriptions:
                         descriptions.append(desc)
+
+        # Дедупликация описаний: удаляем более короткие строки, если они содержатся в более длинных
+        # (например, удаляем "Страховая пенсия", если есть "Страховая пенсия по старости")
+        
+        # Сортируем по длине (сначала длинные), чтобы проверять вхождение коротких в длинные
+        # Но сначала отделим "пенсионные" описания от остальных, чтобы не удалить лишнего
+        pension_descs = [d for d in descriptions if "пенси" in d.lower()]
+        other_descs = [d for d in descriptions if "пенси" not in d.lower()]
+        
+        unique_pension_descs = []
+        # Сортируем пенсии по убыванию длины
+        pension_descs.sort(key=len, reverse=True)
+        
+        for d in pension_descs:
+            is_redundant = False
+            for existing in unique_pension_descs:
+                if d in existing: # Если текущая строка является подстрокой уже добавленной (более длинной)
+                    is_redundant = True
+                    break
+            if not is_redundant:
+                unique_pension_descs.append(d)
+                
+        descriptions = unique_pension_descs + other_descs
 
         # Убираем дубликаты - сравниваем по типу выплаты и сумме
         unique_descriptions = []
@@ -5020,10 +5063,118 @@ JSON:
                 seen_benefits.append(benefit_signature)
                 unique_descriptions.append(desc)
 
-        # Формируем итоговый текст
+
+        # Формируем итоговый текст (объединенное предложение)
         if unique_descriptions:
-            result = " ".join(unique_descriptions)
-            return result
+            items_received = []
+            
+            for desc in unique_descriptions:
+                desc_lower = desc.lower()
+                
+                # Попытка извлечь название выплаты из разных форматов
+                extracted_name = ""
+                
+                # 1. Формат "Должник получает ... (Название)"
+                if "(" in desc and ")" in desc:
+                    # Ищем внутри скобок
+                    start_idx = desc.find("(")
+                    end_idx = desc.find(")")
+                    if start_idx != -1 and end_idx != -1:
+                        extracted_name = desc[start_idx+1:end_idx]
+                
+                # 2. Формат "Является получателем ... " (GPT)
+                elif "является получателем" in desc_lower:
+                    # Убираем префикс
+                    temp = desc_lower.replace("является получателем", "").strip().rstrip(".")
+                    # Убираем лишние "пенсии", "выплаты" если они в начале (опционально)
+                    extracted_name = temp
+                
+                # 3. Формат "Должник получает ежемесячную денежную выплату" (без скобок)
+                elif "ежемесячную денежную выплату" in desc_lower or "ежемесячная денежная выплата" in desc_lower:
+                    extracted_name = "ежемесячная денежная выплата"
+                
+                # Если не удалось извлечь - берем как есть
+                if not extracted_name:
+                    extracted_name = desc.replace("Должник получает", "").replace("Является получателем", "").strip().rstrip(".")
+
+                # Нормализация и склонение (очень упрощенно)
+                name_lower = extracted_name.lower()
+                
+                # ЕДВ
+                if "ежемесячн" in name_lower and "денежн" in name_lower and "выплат" in name_lower:
+                     base_edv = "ежемесячной денежной выплаты"
+                     if "инвалид" in name_lower:
+                         base_edv += " инвалидам"
+                     elif "ветеран" in name_lower:
+                         base_edv += " ветеранам"
+                     elif "чернобыл" in name_lower or "радиац" in name_lower:
+                         base_edv += " гражданам, подвергшимся воздействию радиации"
+                     items_received.append(base_edv)
+                
+                # Пенсии
+                elif "пенси" in name_lower:
+                    # Пытаемся склонять "Страховая пенсия" -> "страховой пенсии"
+                    # Обычно GPT выдает уже склоненное "получателем страховой пенсии"
+                    # А формат "Должник получает пенсию (Страховая пенсия)" дает именительный
+                    
+                    if "пенсия" in name_lower: # Именительный
+                        declined = name_lower.replace("пенсия", "пенсии")
+                        declined = declined.replace("страховая", "страховой")
+                        declined = declined.replace("социальная", "социальной")
+                        declined = declined.replace("накопительная", "накопительной")
+                        declined = declined.replace("государственная", "государственной")
+                        items_received.append(declined)
+                    else: # Уже родительный или другой
+                        items_received.append(name_lower)
+                
+                # Пособия
+                elif "пособи" in name_lower:
+                    if "пособие" in name_lower:
+                        declined = name_lower.replace("пособие", "пособия")
+                        declined = declined.replace("ежемесячное", "ежемесячного")
+                        items_received.append(declined)
+                    else:
+                        items_received.append(name_lower)
+                
+                # Прочее
+                else:
+                    items_received.append(name_lower)
+
+            # Собираем в одно предложение
+            if not items_received:
+                 return " ".join(unique_descriptions)
+
+            # Удаляем дубликаты (игнорируя регистр и вхождения)
+            unique_items = []
+            # Сортируем по длине (сначала длинные), чтобы короткие "страховой пенсии" не дублировали "страховой пенсии по старости"
+            items_received.sort(key=len, reverse=True)
+            
+            for item in items_received:
+                is_redundant = False
+                for existing in unique_items:
+                    # Проверяем вхождение
+                    if item in existing: 
+                        is_redundant = True
+                        break
+                    # Проверяем нечеткое совпадение для ЕДВ с кучей уточнений
+                    if "ежемесячной денежной выплаты" in item and "ежемесячной денежной выплаты" in existing:
+                        # Если уже есть ЕДВ (возможно с другим уточнением), считаем дублем??
+                        # Нет, они могут быть разными. Лучше оставить более длинное описание (уже отсортировали)
+                        # Но если "ежемесячной денежной выплаты" vs "ежемесячной денежной выплаты инвалидам", то второе уже добавлено (длинное)
+                        # А первое (короткое) будет вхождением во второе -> is_redundant = True.
+                        pass
+
+                if not is_redundant:
+                    unique_items.append(item)
+            
+            # Разворачиваем обратно, чтобы красивее смотрелось (хотя порядок не так важен)
+            # unique_items.reverse() 
+            
+            final_str = ", ".join(unique_items)
+            if len(unique_items) > 1:
+                final_str = ", ".join(unique_items[:-1]) + " и " + unique_items[-1]
+            
+            return f"Является получателем {final_str}."
         else:
             return "Получателем пенсий, пособий не является."
 
@@ -9768,8 +9919,7 @@ JSON формат:
 - Адрес регистрации (прописка).
 - Извлекай адрес 1:1 как написано в отчете, ничего не меняя (Убери только почтовый индекс и убери капс, заглавные буквы только пусть будут, там где они уместны - если нет, добавь сам заглавные буквы там где надо)! Это очень важно!
 
-ИЗВЛЕКАЙ ДАННЫЕ ПО КРЕДИТАМ ТОЛЬКО ИЗ ДЕТАЛЬНЫХ БЛОКОВ! Краткую таблицу используй только для навигации.
-ВНИМАНИЕ: Извлекай АБСОЛЮТНО ВСЕ текущие кредиты, не пропускай ни одного блока! Если блок видишь - извлекай.
+ИЗВЛЕКАЙ ДАННЫЕ ПО КРЕДИТАМ ТОЛЬКО ИЗ ДЕТАЛЬНЫХ БЛОКОВ! Краткую таблицу используй только для того чтобы узнать какие кредиты актуальные(открытые), отсюда можешь взять основную информацию для дальнейшего анализа.
 
 АЛГОРИТМ ДЛЯ КАЖДОГО КРЕДИТА (БЛОКА):
 
@@ -10127,7 +10277,7 @@ JSON (СТРОГО этот формат) - Включай ТОЛЬКО теку
 - Адрес регистрации (прописка).
 - Извлекай адрес 1:1 как написано в отчете, ничего не меняя (Убери только почтовый индекс и убери капс, заглавные буквы только пусть будут, там где они уместны - если нет, добавь сам заглавные буквы там где надо)! Это очень важно!
 
-ИЗВЛЕКАЙ ДАННЫЕ ПО КРЕДИТАМ ТОЛЬКО ИЗ ДЕТАЛЬНЫХ БЛОКОВ! Краткую таблицу используй только для навигации.
+ИЗВЛЕКАЙ ДАННЫЕ ПО КРЕДИТАМ ТОЛЬКО ИЗ ДЕТАЛЬНЫХ БЛОКОВ! Краткую таблицу используй только для того чтобы узнать какие кредиты актуальные(открытые), отсюда можешь взять основную информацию для дальнейшего анализа.
 
 АЛГОРИТМ ДЛЯ КАЖДОГО КРЕДИТА (БЛОКА):
 
