@@ -173,6 +173,7 @@ class DocumentProcessor:
         - Если есть запись о браке/разводе — статус, дата, орган, ФИО супруга.
         - Если штампов нет — статус "Не женат"/"Не замужем".
         - Если есть штамп о браке, и второй какой-то штамп после него, который НЕВОЗМОЖНО достоверно определить как брак или развод — статус "Не женат"/"Не замужем"
+        - Короче, если первый штамп брак, второй непонятная каша какая-то — итоговый статус "Не женат"/"Не замужем"
 5. Печати о детях (стр. 16-17):
         - ВНИМАТЕЛЬНО изучи раздел "Дети".
         - Это могут быть печати или рукописные записи.
@@ -4066,24 +4067,40 @@ JSON:
                 
                 entry_str = f"{name_clean} {dob_str} г.р."
                 
-                # Проверка на дубликат
+                # Проверка на дубликат или конфликт дат
                 is_duplicate = False
-                for existing_norm, existing_entry, existing_dob in collected_minors:
-                    # 1. Если даты рождения совпадают
-                    if existing_dob == dob_obj:
-                        # 1.1 Точное совпадение нормализованных имен
-                        if existing_norm == name_norm:
+                for i, (existing_norm, existing_entry, existing_dob) in enumerate(collected_minors):
+                    is_match = False
+                    
+                    # 1. Если имена совпадают (точное + fuzzy)
+                    if existing_norm == name_norm:
+                        is_match = True
+                    elif name_norm and existing_norm:
+                        ratio = difflib.SequenceMatcher(None, existing_norm, name_norm).ratio()
+                        if ratio > 0.85:
+                            is_match = True
+                    
+                    if is_match:
+                        # Имена совпали. Теперь проверяем даты.
+                        if existing_dob == dob_obj:
+                            # Полный дубль -> пропускаем
                             is_duplicate = True
                             break
-                        
-                        # 1.2 Fuzzy-сравнение имен (если даты совпадают)
-                        # "Пястолова Елизавета" vs "Пастолова Елизавета"
-                        if name_norm and existing_norm:
-                            ratio = difflib.SequenceMatcher(None, existing_norm, name_norm).ratio()
-                            if ratio > 0.85: # Высокая схожесть (опечатка в фамилии)
+                        else:
+                            # КОНФЛИКТ ДАТ ДЛЯ ОДНОГО И ТОГО ЖЕ ИМЕНИ:
+                            # 1. Если день и месяц совпадают -> это ТОЧНО один ребенок с опечаткой в годе
+                            if existing_dob.day == dob_obj.day and existing_dob.month == dob_obj.month:
+                                # Предпочитаем более ПОЗДНИЙ год (2020), так как OCR часто путает 2 и 1 (2010)
+                                if dob_obj.year > existing_dob.year:
+                                    # Заменяем старую запись на новую (2020)
+                                    collected_minors[i] = (name_norm, entry_str, dob_obj)
                                 is_duplicate = True
                                 break
-                
+                            
+                            # 2. Если имена ОЧЕНЬ похожи (> 0.95), но даты разные -> скорее всего дубль
+                            # Например: "Иванов И.И. 01.01.2010" и "Иванов И.И. 01.02.2010"
+                            # Здесь риск выше. Оставим как есть, но для года (день/месяц совпали) мы уже обработали.
+                            
                 if not is_duplicate:
                     collected_minors.append((name_norm, entry_str, dob_obj))
                     
