@@ -6424,22 +6424,23 @@ JSON:
                 # Получаем данные объекта
                 объект = obj.get("Объект", {})
 
-                кадастр = obj.get("Кадастровый_номер", "")
+                кадастр = объект.get("Кадастровый_номер") or obj.get("Кадастровый_номер", "")
                 адрес = объект.get("Адрес") or obj.get("Адрес", "")
                 площадь = объект.get("Площадь") or obj.get("Площадь", "")
                 тип_объекта = объект.get("Вид") or obj.get("Тип_объекта", "")
                 назначение = объект.get("Назначение", "")
 
                 # Дедупликация по кадастровому
-                if кадастр and кадастр in processed_cadastral:
-                    continue
                 if кадастр:
-                    processed_cadastral.add(кадастр)
+                    кадастр_clean = кадастр.strip()
+                    if кадастр_clean in processed_cadastral:
+                        continue
+                    processed_cadastral.add(кадастр_clean)
                 
-                # Дедупликация по адресу 
-                if адрес:
+                # Дедупликация по адресу (ТОЛЬКО если нет кадастрового номера)
+                if not кадастр and адрес:
                     # Нормализация для сравнения: нижний регистр + удаление пробелов
-                    addr_clean = " ".join(адрес.lower().split())
+                    addr_clean = f"{тип_объекта.lower()} | {' '.join(адрес.lower().split())}"
                     if addr_clean in processed_addresses:
                         continue
                     processed_addresses.add(addr_clean)
