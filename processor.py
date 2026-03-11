@@ -4505,79 +4505,113 @@ JSON:
                 # Старый формат: один объект = одно ТС
                 all_vehicles.append(data)
 
-        # Дедупликация по VIN (включая нечеткий поиск)
-        seen_vins = {} # Map cleaned_vin -> data
-        deduplicated = []
+        # Дедупликация по VIN и марке
+        import difflib  # Ensure difflib is imported
+        
+        # 1. Сначала собираем все записи с валидным VIN
+        valid_vin_records = {} # normalized_vin -> data
+        valid_records = []
+        orphan_records = [] # Записи без VIN
         
         for data in all_vehicles:
             raw_vin = data.get("VIN", "")
+            norm_vin = re.sub(r'[^A-Z0-9]', '', raw_vin.upper()) if raw_vin else ""
             
-            # Если VIN нет, добавляем как есть
-            if not raw_vin:
-                deduplicated.append(data)
-                continue
+            if len(norm_vin) > 10: # Просто проверка длины для VIN
+                # Это запись с VIN
+                # Проверяем на дубликаты с нечетким поиском
+                is_duplicate = False
+                best_vin = None
                 
-            # Нормализация VIN (убираем пробелы, тире и приводим к верхнему регистру)
-            current_vin = re.sub(r'[^A-Z0-9]', '', raw_vin.upper())
-            if not current_vin:
-                deduplicated.append(data)
-                continue
-            
-            is_duplicate = False
-            best_match_vin = None
-            
-            # 1. Точное совпадение
-            if current_vin in seen_vins:
-                is_duplicate = True
-                best_match_vin = current_vin
-            else:
-                # 2. Нечеткий поиск (для борьбы с ошибками OCR: 8 vs 3, D vs 0, 8 vs 6)
-                # Порог 0.8 позволяет найти совпадение при ~3 различиях в 17 символах
-                best_ratio = 0.0
-                for seen_vin in seen_vins:
-                    ratio = difflib.SequenceMatcher(None, current_vin, seen_vin).ratio()
-                    if ratio > best_ratio:
-                        best_ratio = ratio
-                        best_match_vin = seen_vin
-                
-                if best_ratio > 0.8:
+                if norm_vin in valid_vin_records:
+                    best_vin = norm_vin
                     is_duplicate = True
-                    print(f"      [DEDUP] Найден нечеткий дубликат VIN: {current_vin} ~ {best_match_vin} (ratio: {best_ratio:.2f})")
-            
-            if is_duplicate and best_match_vin:
-                # Логика выбора лучшей версии
-                existing_data = seen_vins[best_match_vin]
-                
-                existing_doc_type = str(existing_data.get("Документ", {}).get("Тип", "")).upper()
-                current_doc_type = str(data.get("Документ", {}).get("Тип", "")).upper()
-                
-                # Приоритет: СТС > ПТС > Договор
-                def get_priority(doc_type):
-                    if "СТС" in doc_type or "СВИДЕТЕЛЬСТВО" in doc_type: return 3
-                    if "ПТС" in doc_type or "ПАСПОРТ" in doc_type: return 2
-                    return 1
-                
-                current_prio = get_priority(current_doc_type)
-                existing_prio = get_priority(existing_doc_type)
-                
-                if current_prio > existing_prio:
-                    # Заменяем старую запись на новую, более приоритетную
-                    deduplicated.remove(existing_data)
-                    deduplicated.append(data)
-                    # Обновляем маппинг. Если VIN был разный (fuzzy), удаляем старый ключ, добавляем новый
-                    if best_match_vin != current_vin:
-                        del seen_vins[best_match_vin]
-                    seen_vins[current_vin] = data
-                    print(f"      [DEDUP] Обновлено: {existing_doc_type} -> {current_doc_type}")
                 else:
-                    print(f"      [DEDUP] Оставлено существующее: {existing_doc_type} (vs {current_doc_type})")
+                    best_ratio = 0.0
+                    for exists_vin in valid_vin_records:
+                         ratio = difflib.SequenceMatcher(None, norm_vin, exists_vin).ratio()
+                         if ratio > best_ratio:
+                             best_ratio = ratio
+                             best_vin = exists_vin
+                    
+                    if best_ratio > 0.8:
+                        is_duplicate = True
+                
+                if is_duplicate and best_vin:
+                    # Сравниваем приоритеты документов
+                    existing_data = valid_vin_records[best_vin]
+                    
+                    # Приоритет: СТС > ПТС > Договор
+                    def get_doc_priority(d):
+                        dt = str(d.get("Документ", {}).get("Тип", "")).upper()
+                        if "СТС" in dt or "СВИДЕТЕЛЬСТВО" in dt: return 3
+                        if "ПТС" in dt or "ПАСПОРТ" in dt: return 2
+                        return 1
+                    
+                    if get_doc_priority(data) > get_doc_priority(existing_data):
+                        # Новая запись лучше - заменяем
+                        # Удаляем старую из списка valid_records
+                        if existing_data in valid_records:
+                            valid_records.remove(existing_data)
+                        valid_records.append(data)
+                        
+                        # Обновляем мапу
+                        if best_vin != norm_vin:
+                            del valid_vin_records[best_vin]
+                        valid_vin_records[norm_vin] = data
+                    else:
+                        # Старая лучше, игнорируем новую
+                        pass
+                else:
+                    # Новая уникальная запись
+                    valid_vin_records[norm_vin] = data
+                    valid_records.append(data)
             else:
-                # Новенький
-                seen_vins[current_vin] = data
-                deduplicated.append(data)
+                orphan_records.append(data)
+
+        # 2. Обрабатываем записи без VIN (orphan)
+        # Пытаемся привязать их к существующим записям по Модели
+        final_deduplicated = list(valid_records)
+        
+        for orphan in orphan_records:
+            orphan_model = str(orphan.get("Марка_модель", "") or "").lower()
+            orphan_model = re.sub(r'[^a-z0-9]', '', orphan_model) # a-z0-9 only
+            
+            if not orphan_model:
+                # Если модели нет и VIN нет - это мусор, но оставим если есть тип
+                if orphan.get("Тип_ТС"):
+                    final_deduplicated.append(orphan)
+                continue
+                
+            is_matched = False
+            for existing in valid_records:
+                existing_model = str(existing.get("Марка_модель", "") or "").lower()
+                existing_model = re.sub(r'[^a-z0-9]', '', existing_model)
+                
+                if not existing_model:
+                    continue
+                    
+                # Сравниваем модели
+                # Полное вхождение или высокая схожесть
+                if orphan_model in existing_model or existing_model in orphan_model:
+                    is_matched = True
+                    break
+                    
+                ratio = difflib.SequenceMatcher(None, orphan_model, existing_model).ratio()
+                if ratio > 0.8: # Высокая схожесть моделей (Renault Duster vs RENAULTDUSTER)
+                    is_matched = True
+                    break
+            
+            if not is_matched:
+                # Если не нашли соответствия среди машин с VIN - добавляем как отдельную
+                # (Возможно это прицеп или другая машина без VIN в документах)
+                final_deduplicated.append(orphan)
+            else:
+                # Нашли соответствие - считаем дубликатом более полной записи и пропускаем
+                pass
 
         descriptions = []
-        for data in deduplicated:
+        for data in final_deduplicated:
             # Проверяем, не справка ли об отсутствии
             if data.get("Результат") == "транспорт отсутствует":
                 continue
