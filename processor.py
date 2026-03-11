@@ -9748,8 +9748,11 @@ JSON формат:
         if debtor_fio and "{debtor_fio}" in base_prompt:
             base_prompt = base_prompt.replace("{debtor_fio}", debtor_fio)
 
-        # Выбираем модель: для критически важных документов (счета, ЕГРН) используем gpt-5.1
-        current_model = "gpt-5-mini" if doc_type in ["счета", "егрн_выписка"] else GPT_MODEL
+        # Выбираем модель: для паспорта используем gpt-5, для других важных документов (счета, ЕГРН) используем gpt-5-mini
+        if doc_type == "паспорт":
+            current_model = "gpt-5"
+        else:
+            current_model = "gpt-5-mini" if doc_type in ["счета", "егрн_выписка"] else GPT_MODEL
         
         print(f"   > {pdf_path.name}")
         print(f"      Тип: {doc_type} (Модель: {current_model})")
@@ -10217,7 +10220,7 @@ JSON (СТРОГО этот формат) - Включай ТОЛЬКО теку
                         else:
                             print(f"         Батч {batch_num} ({actual_start}-{end_idx})...", end=" ", flush=True)
                         
-                        response_text, error_code = self.process_images_with_gpt(batch_pages, batch_prompt)
+                        response_text, error_code = self.process_images_with_gpt(batch_pages, batch_prompt, model=current_model)
                         
                         # Проверяем ошибки 400/500 - запрос слишком большой
                         if error_code in [400, 500]:
@@ -10556,7 +10559,7 @@ JSON (СТРОГО этот формат) - Включай ТОЛЬКО теку
 
                 try:
                     print(f"      Обработка ({len(page_images)} стр.)...", end=" ", flush=True)
-                    response_text, error_code = self.process_images_with_gpt(page_images, simple_prompt)
+                    response_text, error_code = self.process_images_with_gpt(page_images, simple_prompt, model=current_model)
                     
                     # Если ошибка 400/500 - переключаемся на батч-режим
                     if error_code in [400, 500]:
@@ -10733,7 +10736,7 @@ JSON (СТРОГО этот формат) - Включай ТОЛЬКО теку
                     
                     try:
                         print(f"      Батч {batch_num}/{total_batches} (стр. {batch_start+1}-{batch_end})...", end=" ", flush=True)
-                        response_text, error_code = self.process_images_with_gpt(batch_images, batch_prompt)
+                        response_text, error_code = self.process_images_with_gpt(batch_images, batch_prompt, model=current_model)
                         cleaned = self.clean_json_response(response_text)
                         batch_data = json.loads(cleaned) if cleaned else {}
                         
@@ -10774,8 +10777,8 @@ JSON (СТРОГО этот формат) - Включай ТОЛЬКО теку
 ВЕРНИ ТОЛЬКО JSON!"""
 
                 try:
-                    print(f"      Обработка GPT-5.1 ({len(pages)} стр.)...", end=" ", flush=True)
-                    response_text, error_code = self.process_images_with_gpt(page_images, credit_prompt)
+                    print(f"      Обработка {current_model} ({len(pages)} стр.)...", end=" ", flush=True)
+                    response_text, error_code = self.process_images_with_gpt(page_images, credit_prompt, model=current_model)
                     cleaned = self.clean_json_response(response_text)
                     extracted_data = json.loads(cleaned) if cleaned else {}
                     print("OK")
@@ -10866,8 +10869,8 @@ JSON (СТРОГО этот формат) - Включай ТОЛЬКО теку
 
             print(f"      Обработка всех страниц GPT-5...", end=" ", flush=True)
 
-            # Process all pages at once with GPT-5 Vision
-            response_text, error_code = self.process_images_with_gpt(saved_page_paths, multi_page_prompt)
+            # Process all pages at once with selected model Vision
+            response_text, error_code = self.process_images_with_gpt(saved_page_paths, multi_page_prompt, model=current_model)
             cleaned = self.clean_json_response(response_text)
 
             # ЛОГИРОВАНИЕ для налогового уведомления
