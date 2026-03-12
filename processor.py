@@ -4460,6 +4460,21 @@ JSON:
                     print(f"[REAL_ESTATE_DETAILED] Parts for {vid}: {parts}")
                     if parts:
                         description = ", ".join(parts)
+                        
+                        # Дедупликация по кадастровому номеру
+                        is_duplicate_egrn = False
+                        if kadaster and kadaster.strip():
+                            stripped_kadaster = kadaster.strip()
+                            if stripped_kadaster in processed_cadastral_numbers:
+                                print(f"[REAL_ESTATE_DETAILED] Skipping duplicate cadastral: {stripped_kadaster}")
+                                is_duplicate_egrn = True
+                            else:
+                                processed_cadastral_numbers.add(stripped_kadaster)
+                        # Ранее тут была дедупликация по адресу, но если не было кадастра (оставим пока только кадастр, как надежный ключ)
+                        
+                        if is_duplicate_egrn:
+                            continue
+                            
                         print(f"[REAL_ESTATE_DETAILED] Adding description: {description[:100]}")
                         descriptions.append(description)
                 else:
