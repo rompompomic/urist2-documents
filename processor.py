@@ -6269,6 +6269,7 @@ JSON:
                     **base_obj,
                     "Кадастровый_номер": obj_data.get("Кадастровый_номер", ""),
                     "Номер_в_списке": category_counters['земля'],
+                    "Число": f"{category_counters['земля']}) {тип_объекта}",
                 })
                 category_counters['земля'] += 1
 
@@ -6279,10 +6280,11 @@ JSON:
                 ("жил" in назначение_lower and "дом" in назначение_lower) or
                 ("здание" in тип_lower and ("жил" in назначение_lower or "жил" in адрес_lower))
             ):
-                название = f"{category_counters['дом']}) {тип_объекта}" if category_counters['дом'] > 1 else тип_объекта
+                название = f"{category_counters['дом']}) {тип_объекта}"
                 жилые_дома.append({
                     **base_obj,
                     "Вид_и_наименование": название,
+                    "Число": название,
                 })
                 category_counters['дом'] += 1
 
@@ -6293,26 +6295,29 @@ JSON:
                 "квартира" in назначение_lower or
                 ("помещение" in тип_lower and "жил" in назначение_lower)
             ):
-                название = f"{category_counters['квартира']}) {тип_объекта}" if category_counters['квартира'] > 1 else тип_объекта
+                название = f"{category_counters['квартира']}) {тип_объекта}"
                 квартиры.append({
                     **base_obj,
                     "Вид_и_наименование": название,
+                    "Число": название,
                 })
                 category_counters['квартира'] += 1
 
             elif "гараж" in тип_lower or "бокс" in тип_lower or "машино-место" in тип_lower:
-                название = f"{category_counters['гараж']}) {тип_объекта}" if category_counters['гараж'] > 1 else тип_объекта
+                название = f"{category_counters['гараж']}) {тип_объекта}"
                 гаражи.append({
                     **base_obj,
                     "Вид_и_наименование": название,
+                    "Число": название,
                 })
                 category_counters['гараж'] += 1
 
             else:
-                название = f"{category_counters['иное']}) {тип_объекта}" if category_counters['иное'] > 1 else тип_объекта
+                название = f"{category_counters['иное']}) {тип_объекта}"
                 иное_недвижимое.append({
                     **base_obj,
                     "Вид_и_наименование_имущества": название,
+                    "Число": название,
                 })
                 category_counters['иное'] += 1
         
@@ -6609,6 +6614,7 @@ JSON:
                 "Основание_приобретения_и_стоимость": "",
                 "Сведения_о_залоге_и_залогодержателе": "",
                 "Номер_в_списке": "",
+                "Число": "",
             })
 
         if not жилые_дома:
@@ -6619,6 +6625,7 @@ JSON:
                 "Площадь": "",
                 "Основание_приобретения_и_стоимость": "",
                 "Сведения_о_залоге_и_залогодержателе": "",
+                "Число": "",
             })
 
         if not квартиры:
@@ -6629,6 +6636,7 @@ JSON:
                 "Площадь": "",
                 "Основание_приобретения_и_стоимость": "",
                 "Сведения_о_залоге_и_залогодержателе": "",
+                "Число": "",
             })
 
         if not гаражи:
@@ -6639,6 +6647,7 @@ JSON:
                 "Площадь": "",
                 "Основание_приобретения_и_стоимость": "",
                 "Сведения_о_залоге_и_залогодержателе": "",
+                "Число": "",
             })
 
         if not иное_недвижимое:
@@ -6649,7 +6658,15 @@ JSON:
                 "Площадь": "",
                 "Основание_приобретения_и_стоимость": "",
                 "Сведения_о_залоге_и_залогодержателе": "",
+                "Число": "",
             })
+
+        # Добавляем объединенную строку для первой колонки (чтобы сливать ячейки)
+        for cat_list in [земельные, жилые_дома, квартиры, гаражи, иное_недвижимое]:
+            valid_items = [item.get("Число", "") for item in cat_list if item.get("Число")]
+            все_числа = "\n".join(valid_items) if valid_items else ""
+            for i, item in enumerate(cat_list):
+                item["Число"] = все_числа if i == 0 else ""
 
         return {
             "земельные_участки": земельные,
@@ -6843,27 +6860,33 @@ JSON:
             # Распределяем по категориям на основе типа ТС
             if "грузов" in тип_тс or "truck" in тип_тс:
                 vehicle_entry["авто_пп"] = str(counter_truck)
+                vehicle_entry["Число"] = f"{counter_truck}) {вид_марка}"
                 грузовики.append(vehicle_entry)
                 counter_truck += 1
             elif "мото" in тип_тс or "motorcycle" in тип_тс or "мотоцикл" in тип_тс:
                 vehicle_entry["авто_пп"] = str(counter_moto)
+                vehicle_entry["Число"] = f"{counter_moto}) {вид_марка}"
                 мото.append(vehicle_entry)
                 counter_moto += 1
             elif "сельск" in тип_тс or "трактор" in тип_тс or "комбайн" in тип_тс:
                 vehicle_entry["авто_пп"] = str(counter_agro)
+                vehicle_entry["Число"] = f"{counter_agro}) {вид_марка}"
                 сельхоз.append(vehicle_entry)
                 counter_agro += 1
             elif "водн" in тип_тс or "лодк" in тип_тс or "катер" in тип_тс or "яхт" in тип_тс:
                 vehicle_entry["авто_пп"] = str(counter_water)
+                vehicle_entry["Число"] = f"{counter_water}) {вид_марка}"
                 водный.append(vehicle_entry)
                 counter_water += 1
             elif "воздуш" in тип_тс or "самолет" in тип_тс or "вертолет" in тип_тс:
                 vehicle_entry["авто_пп"] = str(counter_air)
+                vehicle_entry["Число"] = f"{counter_air}) {вид_марка}"
                 воздушный.append(vehicle_entry)
                 counter_air += 1
             else:
                 # По умолчанию - легковой автомобиль
                 vehicle_entry["авто_пп"] = str(counter_auto)
+                vehicle_entry["Число"] = f"{counter_auto}) {вид_марка}"
                 автомобили.append(vehicle_entry)
                 counter_auto += 1
         
@@ -6889,22 +6912,23 @@ JSON:
             "Стоимость": "",
             "Сведения_о_залоге": "",
             "авто_пп": "", # Пустой номер
+            "Число": "",
             # ...другие поля, которые могут использоваться в шаблоне...
         }
 
         # Для каждого списка проверяем: если пуст - ставим заглушку
         # Используем копию empty_vehicle для каждого, чтобы не было ссылок на один объект
-        if not автомобили: 
+        if not автомобили:
              автомобили = [empty_vehicle.copy()]
-        if not грузовики: 
+        if not грузовики:
              грузовики = [empty_vehicle.copy()]
-        if not мото: 
+        if not мото:
              мото = [empty_vehicle.copy()]
-        if not сельхоз: 
+        if not сельхоз:
              сельхоз = [empty_vehicle.copy()]
-        if not водный: 
+        if not водный:
              водный = [empty_vehicle.copy()]
-        if not воздушный: 
+        if not воздушный:
              воздушный = [empty_vehicle.copy()]
 
         # "Иное" в коде выше не собиралось отдельно, но в запросе пользователя есть цикл {% for другое in иное %}
@@ -6912,7 +6936,14 @@ JSON:
         # В текущем коде сборщика "иного" нет (все падает в автомобили или другие категории).
         # Добавим пустой список "иное" с заглушкой.
         иное = [empty_vehicle.copy()]
-        
+
+        # Добавляем объединенную строку для первой колонки (чтобы сливать ячейки {% vm %})
+        for cat_list in [автомобили, грузовики, мото, сельхоз, водный, воздушный, иное]:
+            valid_items = [item.get("Число", "") for item in cat_list if item.get("Число")]
+            все_числа = "\n".join(valid_items) if valid_items else ""
+            for i, item in enumerate(cat_list):
+                item["Число"] = все_числа if i == 0 else ""
+
         # Исправляем возвращаемый словарь: добавляем ключ "иное"
 
 
