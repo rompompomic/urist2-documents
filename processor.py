@@ -9197,28 +9197,29 @@ JSON формат:
         """Заполняет Word шаблон с поддержкой динамических таблиц (Jinja2)."""
         doc = DocxTemplate(template_path)
 
-        # Обрабатываем Приложения, превращая переносы строк в Soft Breaks (<w:br/>) через RichText
-        if "Приложения" in context and isinstance(context["Приложения"], str):
-            text = context["Приложения"]
-            if "\n" in text or "{{LINE_BREAK}}" in text:
-                try:
-                    text_norm = text.replace("{{LINE_BREAK}}", "\n").strip()
-                    lines = [line.strip() for line in text_norm.split('\n') if line.strip()]
-                    
+        def recursive_richtext_replace(obj):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    obj[k] = recursive_richtext_replace(v)
+            elif isinstance(obj, list):
+                for i in range(len(obj)):
+                    obj[i] = recursive_richtext_replace(obj[i])
+            elif isinstance(obj, str) and ("\n" in obj or "{{LINE_BREAK}}" in obj):
+                # Если это не просто пробелы
+                text_norm = obj.replace("{{LINE_BREAK}}", "\n").strip()
+                if text_norm and '\n' in text_norm:
+                    lines = text_norm.split('\n')
                     rt = RichText()
                     for i, line in enumerate(lines):
-                        # Force Times New Roman 12pt (size 24 half-points)
                         rt.add(line, font='Times New Roman', size=24)
                         if i < len(lines) - 1:
-                            rt.add('\n') # \n в RichText = <w:br/> (Shift+Enter)
-                    
-                    context["Приложения"] = rt
-                except Exception as e:
-                    print(f"      [WARNING] Error converting Attachments to RichText: {e}")
+                            rt.add('\n')
+                    return rt
+            return obj
 
-        # Рендерим шаблон с контекстом
-        doc.render(context)
-
+        # Рекурсивно превращаем все переносы строк в словарях/списках в RichText, 
+        # чтобы они не удалялись lxml и Word-ом.
+        context = recursive_richtext_replace(context)
         # Создаем папку если нужно
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
