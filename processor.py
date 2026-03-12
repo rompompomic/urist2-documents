@@ -9220,9 +9220,10 @@ JSON формат:
         # Рекурсивно превращаем все переносы строк в словарях/списках в RichText, 
         # чтобы они не удалялись lxml и Word-ом.
         context = recursive_richtext_replace(context)
-        # Создаем папку если нужно
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
+        
+        # Рендерим шаблон с контекстом
+        doc.render(context)
+        
         # Сохраняем результат
         doc.save(output_path)
         
