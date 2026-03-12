@@ -6671,7 +6671,7 @@ JSON:
                 for idx, txt in enumerate(valid_items):
                     if idx > 0:
                         rt.add('\n')
-                    rt.add(txt)
+                    rt.add(txt, font='Times New Roman', size=24)
                 все_числа = rt
             else:
                 все_числа = ""
@@ -11128,23 +11128,15 @@ JSON (СТРОГО этот формат) - Включай ТОЛЬКО теку
     def _make_json_serializable(obj: Any) -> Any:
         """Конвертирует RichText объекты и другие несериализуемые типы в строки."""
         from docxtpl import RichText
-        
+        import html
+
         if isinstance(obj, RichText):
-            # RichText содержит XML-разметку, нужно извлечь чистый текст
-            # Получаем строковое представление
+            # Извлекаем чистый текст с сохранением переносов строк
             rich_text_str = str(obj)
-            
-            # Удаляем все XML-теги, извлекая только текстовое содержимое
-            # Паттерн ищет содержимое между <w:t>...</w:t> или <w:t xml:space="preserve">...</w:t>
-            text_content = re.findall(r'<w:t[^>]*>(.*?)</w:t>', rich_text_str)
-            
-            if text_content:
-                # Объединяем найденные фрагменты текста
-                return ''.join(text_content)
-            else:
-                # Если паттерн не нашел ничего, пробуем просто удалить все XML теги
-                clean_text = re.sub(r'<[^>]+>', '', rich_text_str)
-                return clean_text.strip() if clean_text.strip() else ""
+            # Удаляем все XML теги, оставляя текстовое содержимое и \n
+            clean_text = re.sub(r'<[^>]+>', '', rich_text_str)
+            clean_text = html.unescape(clean_text)
+            return clean_text.strip() if clean_text.strip() else ""
         elif isinstance(obj, dict):
             return {key: DocumentProcessor._make_json_serializable(value) for key, value in obj.items()}
         elif isinstance(obj, list):
