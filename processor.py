@@ -6661,10 +6661,21 @@ JSON:
                 "Число": "",
             })
 
+        from docxtpl import RichText
+
         # Добавляем объединенную строку для первой колонки (чтобы сливать ячейки)
         for cat_list in [земельные, жилые_дома, квартиры, гаражи, иное_недвижимое]:
-            valid_items = [item.get("Число", "") for item in cat_list if item.get("Число")]
-            все_числа = "\n".join(valid_items) if valid_items else ""
+            valid_items = [str(item.get("Число", "")) for item in cat_list if item.get("Число")]
+            if valid_items:
+                rt = RichText()
+                for idx, txt in enumerate(valid_items):
+                    if idx > 0:
+                        rt.add('\n')
+                    rt.add(txt)
+                все_числа = rt
+            else:
+                все_числа = ""
+
             for i, item in enumerate(cat_list):
                 item["Число"] = все_числа if i == 0 else ""
 
@@ -6937,10 +6948,21 @@ JSON:
         # Добавим пустой список "иное" с заглушкой.
         иное = [empty_vehicle.copy()]
 
+        from docxtpl import RichText
+
         # Добавляем объединенную строку для первой колонки (чтобы сливать ячейки {% vm %})
         for cat_list in [автомобили, грузовики, мото, сельхоз, водный, воздушный, иное]:
-            valid_items = [item.get("Число", "") for item in cat_list if item.get("Число")]
-            все_числа = "\n".join(valid_items) if valid_items else ""
+            valid_items = [str(item.get("Число", "")) for item in cat_list if item.get("Число")]
+            if valid_items:
+                rt = RichText()
+                for idx, txt in enumerate(valid_items):
+                    if idx > 0:
+                        rt.add('\n')
+                    rt.add(txt)
+                все_числа = rt
+            else:
+                все_числа = ""
+
             for i, item in enumerate(cat_list):
                 item["Число"] = все_числа if i == 0 else ""
 
