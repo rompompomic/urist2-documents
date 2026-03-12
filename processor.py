@@ -6664,7 +6664,7 @@ JSON:
         # Добавляем объединенную строку для первой колонки (чтобы сливать ячейки)
         for cat_list in [земельные, жилые_дома, квартиры, гаражи, иное_недвижимое]:
             valid_items = [item.get("Число", "") for item in cat_list if item.get("Число")]
-            все_числа = "\a".join(valid_items) if valid_items else ""
+            все_числа = "\n".join(valid_items) if valid_items else ""
             for i, item in enumerate(cat_list):
                 item["Число"] = все_числа if i == 0 else ""
 
@@ -6940,7 +6940,7 @@ JSON:
         # Добавляем объединенную строку для первой колонки (чтобы сливать ячейки {% vm %})
         for cat_list in [автомобили, грузовики, мото, сельхоз, водный, воздушный, иное]:
             valid_items = [item.get("Число", "") for item in cat_list if item.get("Число")]
-            все_числа = "\a".join(valid_items) if valid_items else ""
+            все_числа = "\n".join(valid_items) if valid_items else ""
             for i, item in enumerate(cat_list):
                 item["Число"] = все_числа if i == 0 else ""
 
